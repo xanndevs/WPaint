@@ -1,0 +1,93 @@
+#pragma once
+
+#include <QColor>
+#include <QString>
+#include <QIcon>
+
+class QWidget;
+
+namespace Theme {
+
+enum class Mode { Light, Dark };
+
+// Design tokens (Fluent-2 inspired). All colors/metrics come from here so a
+// theme change is a token swap + stylesheet regen, never a per-widget rework.
+struct Tokens {
+    // Surfaces
+    QColor window;          // app chrome background
+    QColor workspace;       // area surrounding the canvas
+    QColor surface;         // toolbar / panels / status bar
+    QColor surfaceAlt;      // secondary fill (caption strips, wells, rows)
+    QColor surfaceHigh;     // raised content (dialogs, menus)
+    QColor control;         // control rest fill (may be transparent)
+    QColor controlHover;
+    QColor controlPressed;
+    QColor controlStroke;
+    QColor controlStrokeSecondary;
+    QColor divider;
+
+    // Accent / status
+    QColor accent;
+    QColor accentHover;
+    QColor accentPressed;
+    QColor danger;
+
+    // Content
+    QColor textPrimary;
+    QColor textSecondary;
+    QColor textTertiary;
+    QColor textOnAccent;
+    QColor icon;
+    QColor iconOnAccent;
+    QColor focusRing;
+
+    // Canvas / document
+    QColor checkerLight;
+    QColor checkerDark;
+    QColor canvasBorder;
+    QColor handle;
+    QColor handleHover;
+    QColor handleOutline;
+    QColor selectionA;
+    QColor selectionB;
+
+    // Metrics
+    int radiusSm = 4;
+    int radiusMd = 6;
+    int radiusLg = 8;
+    int gap = 4;
+    int pad = 6;
+    int toolbarBtn = 28;
+    int toolbarBtnSmall = 24;
+    int statusH = 28;
+    int captionH = 13;
+    int panelW = 260;
+
+    // Type
+    QString fontFamily;
+    int pxCaption = 11;
+    int pxBase = 12;
+    int pxTitle = 13;
+    int pxStatus = 12;
+};
+
+const Tokens& tokens();
+Mode mode();
+void setMode(Mode m);
+void toggleMode();
+
+// Full application stylesheet for the given tokens.
+QString stylesheet(const Tokens& t);
+
+// Icon provider: loads :/assets/icons/<name>.svg, tints the token marker
+// color to the active icon color, caches results.
+QIcon icon(const QString& name, int px = 20);
+void clearIconCache();
+
+// Call after a theme change: re-tints every button tagged with wpIconName.
+void reapplyIcons(QWidget* root);
+
+// Helpers for building Fluent-ish controls.
+void setIcon(QWidget* w, const QString& iconName, int px = 20);
+
+} // namespace Theme
