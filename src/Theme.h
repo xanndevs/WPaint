@@ -50,11 +50,13 @@ struct Tokens {
     QColor handleOutline;
     QColor selectionA;
     QColor selectionB;
+    QColor panelShadow;
 
     // Metrics
     int radiusSm = 4;
     int radiusMd = 6;
     int radiusLg = 8;
+    int radiusXl = 12;
     int gap = 4;
     int pad = 6;
     int toolbarBtn = 28;
@@ -62,6 +64,11 @@ struct Tokens {
     int statusH = 28;
     int captionH = 13;
     int panelW = 260;
+    int sizePanelW = 50;
+    int sizePanelH = 300;
+    int sizePanelGap = 14;
+    int sliderGroove = 6;
+    int sliderHandle = 16;
 
     // Type
     QString fontFamily;

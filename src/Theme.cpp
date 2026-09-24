@@ -50,6 +50,7 @@ static Tokens makeLight() {
     t.handleOutline = QColor("#767676");
     t.selectionA = QColor("#000000");
     t.selectionB = QColor("#FFFFFF");
+    t.panelShadow = QColor(0, 0, 0, 60);
 
     t.fontFamily = "Inter";
     return t;
@@ -90,6 +91,7 @@ static Tokens makeDark() {
     t.handleOutline = QColor("#9A9A9A");
     t.selectionA = QColor("#FFFFFF");
     t.selectionB = QColor("#000000");
+    t.panelShadow = QColor(0, 0, 0, 110);
 
     t.fontFamily = "Inter";
     return t;
@@ -178,6 +180,15 @@ QToolButton:checked { background: %14; border-color: %14; }
 QToolButton:checked:hover { background: %15; }
 QToolButton:disabled { background: %16; }
 QToolButton[wpFlat="1"] { min-width: 0px; min-height: 0px; padding: 3px 4px; }
+QToolButton[wpBig="1"] { min-width: %26px; min-height: %26px; }
+QToolButton#MenuButtonPopup { padding-bottom: %27px; }
+QToolButton#MenuButtonPopup::menu-indicator {
+    subcontrol-origin: padding;
+    subcontrol-position: bottom center;
+    width: 14px; height: 5px;
+    background: %11;
+    border-radius: 2px;
+}
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
 
 /* Drop-down arrow for menu-button popups drawn by Qt itself */
@@ -231,23 +242,25 @@ QCheckBox::indicator:hover, QRadioButton::indicator:hover { border-color: %20; }
 
 /* ---- Slider ---- */
 QSlider::groove:vertical {
-    width: 4px; background: %17; border-radius: 2px;
+    width: 6px; background: %17; border-radius: 3px;
 }
 QSlider::handle:vertical {
-    width: 16px; height: 16px; margin: -6px 0;
+    width: 16px; height: 16px; margin: -5px 0;
     background: %9; border: 1px solid %17; border-radius: 8px;
 }
 QSlider::handle:vertical:hover { background: %7; border-color: %20; }
-QSlider::groove:horizontal { height: 4px; background: %17; border-radius: 2px; }
+QSlider::handle:vertical:pressed { background: %14; border-color: %14; }
+QSlider::groove:horizontal { height: 6px; background: %17; border-radius: 3px; }
 QSlider::handle:horizontal {
-    width: 16px; height: 16px; margin: -6px 0;
+    width: 16px; height: 16px; margin: 0 -5px;
     background: %9; border: 1px solid %17; border-radius: 8px;
 }
 QSlider::handle:horizontal:hover { background: %7; border-color: %20; }
-QSlider::sub-page:horizontal { background: %14; border-radius: 2px; }
-QSlider::add-page:horizontal { background: %17; border-radius: 2px; }
-QSlider::sub-page:vertical { background: %14; border-radius: 2px; }
-QSlider::add-page:vertical { background: %17; border-radius: 2px; }
+QSlider::handle:horizontal:pressed { background: %14; border-color: %14; }
+QSlider::sub-page:horizontal { background: %14; border-radius: 3px; }
+QSlider::add-page:horizontal { background: %17; border-radius: 3px; }
+QSlider::sub-page:vertical { background: %14; border-radius: 3px; }
+QSlider::add-page:vertical { background: %17; border-radius: 3px; }
 
 /* ---- Dock / panels ---- */
 QDockWidget { background: %4; color: %3; }
@@ -318,11 +331,20 @@ QDialog { background: %4; }
 #PanelRow:hover { background: %7; }
 #PanelRow[wpActive="true"] { background: %16; }
 #ColorWell { border-radius: %6; }
-#PaletteButton { border: 1px solid %5; border-radius: 3px; }
-#PaletteButton:hover { border-color: %20; transform: scale(1.08); }
 #StatusZoomLabel { min-width: 46px; color: %11; }
 #SizeValue { color: %11; font-size: %12px; }
 #CaptionMuted { color: %11; }
+
+/* ---- Floating brush-size panel ---- */
+#SizeSliderPanel {
+    background: %9; border: 1px solid %17; border-radius: %28;
+}
+#SizeSliderCaption {
+    color: %11; font-size: %12px;
+}
+#SizeSliderValue {
+    color: %11; font-size: %12px;
+}
 )QSS")
         .arg(t.fontFamily)      // %1
         .arg(t.pxBase)          // %2
@@ -348,7 +370,10 @@ QDialog { background: %4; }
         .arg(c(t.controlStrokeSecondary)) // %22 scrollbar handle
         .arg(c(t.controlHover)) // %23 scrollbar hover
         .arg(t.pxTitle + 4)     // %24
-        .arg(t.pxBase + 1);     // %25
+        .arg(t.pxBase + 1)      // %25
+        .arg(2 * t.toolbarBtn - 6)  // %26 big tool button min size
+        .arg(4)                     // %27 popup buttons bottom padding
+        .arg(t.radiusXl);           // %28 floating panel radius
 }
 
 // ------------------------------------------------------------- icons -----
