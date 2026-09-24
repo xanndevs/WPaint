@@ -1,14 +1,20 @@
 #pragma once
 
 #include <QColor>
-#include <QString>
 #include <QIcon>
+#include <QString>
+
+#include <functional>
 
 class QWidget;
 
 namespace Theme {
 
 enum class Mode { Light, Dark };
+
+// How the active theme is chosen: System follows the OS color scheme,
+// Light/Dark pin a fixed mode regardless of the OS.
+enum class Pref { System, Light, Dark };
 
 // Design tokens (Fluent-2 inspired). All colors/metrics come from here so a
 // theme change is a token swap + stylesheet regen, never a per-widget rework.
@@ -80,8 +86,21 @@ struct Tokens {
 
 const Tokens& tokens();
 Mode mode();
+Mode systemMode();
+Pref preference();
+void setPreference(Pref p);
 void setMode(Mode m);
 void toggleMode();
+
+// Applies the initial preference (uses the OS scheme by default when the app
+// has no forced choice) and starts watching for OS color-scheme changes.
+// Call once after the QApplication exists.
+void init();
+
+// Invoked whenever the *effective* mode changes, including when the OS scheme
+// flips while Pref::System is active. Call with {} to release a stale target.
+using ModeChangedCallback = std::function<void()>;
+void setModeChangedCallback(ModeChangedCallback cb);
 
 // Full application stylesheet for the given tokens.
 QString stylesheet(const Tokens& t);

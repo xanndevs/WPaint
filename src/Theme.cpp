@@ -2,17 +2,26 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QCoreApplication>
+#include <QEvent>
 #include <QFile>
 #include <QFont>
 #include <QFontDatabase>
+#include <QGuiApplication>
 #include <QHash>
 #include <QMap>
 #include <QPainter>
+#include <QPalette>
+#include <QStyleHints>
 #include <QSvgRenderer>
+
+#include <utility>
 
 namespace Theme {
 
 static Mode g_mode = Mode::Light;
+static Pref g_pref = Pref::System;
+static ModeChangedCallback g_modeChanged;
 static QHash<QString, QIcon> g_iconCache;
 
 static Tokens makeLight() {
@@ -97,31 +106,107 @@ static Tokens makeDark() {
     return t;
 }
 
+static Mode resolveMode() {
+    switch (g_pref) {
+    case Pref::Dark:  return Mode::Dark;
+    case Pref::Light: return Mode::Light;
+    case Pref::System: break;
+    }
+    return systemMode();
+}
+
 const Tokens& tokens() {
     static Tokens light = makeLight();
     static Tokens dark = makeDark();
-    return g_mode == Mode::Light ? light : dark;
+    return resolveMode() == Mode::Light ? light : dark;
 }
 
-Mode mode() { return g_mode; }
+Mode systemMode() {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+    const Qt::ColorScheme cs = QGuiApplication::styleHints()->colorScheme();
+    if (cs == Qt::ColorScheme::Dark) return Mode::Dark;
+    if (cs == Qt::ColorScheme::Light) return Mode::Light;
+#endif
+    const QColor win = QApplication::palette().color(QPalette::Window);
+    return win.lightness() < 128 ? Mode::Dark : Mode::Light;
+}
+
+Mode mode() { return resolveMode(); }
+
+Pref preference() { return g_pref; }
 
 static void applyStylesheet() {
     if (auto* app = qobject_cast<QApplication*>(QCoreApplication::instance()))
         app->setStyleSheet(stylesheet(tokens()));
 }
 
-void setMode(Mode m) {
-    if (m == g_mode) return;
-    g_mode = m;
+// Re-apply on OS theme flips only while we follow the system.
+static void applyMode();
+
+class ThemeFilter : public QObject {
+public:
+    bool eventFilter(QObject* watched, QEvent* ev) override {
+        if (ev->type() == QEvent::ApplicationPaletteChange &&
+            g_pref == Pref::System)
+            applyMode();
+        return QObject::eventFilter(watched, ev);
+    }
+};
+
+static void ensureSystemWatch() {
+    static bool s_watching = false;
+    if (s_watching) return;
+    s_watching = true;
+    if (QGuiApplication::instance()) {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 8, 0)
+        QObject::connect(QGuiApplication::styleHints(),
+                         &QStyleHints::colorSchemeChanged,
+                         [](Qt::ColorScheme) {
+                             if (g_pref == Pref::System) applyMode();
+                         });
+#endif
+        static ThemeFilter* filter = new ThemeFilter;
+        QApplication::instance()->installEventFilter(filter);
+    }
+}
+
+static void applyMode() {
+    ensureSystemWatch();
+    const Mode after = resolveMode();
+    if (after == g_mode) return;
+    g_mode = after;
     clearIconCache();
     applyStylesheet();
     reapplyIcons(QApplication::activeWindow());
     if (QApplication::instance())
         for (QWidget* w : QApplication::topLevelWidgets())
             w->update();
+    if (g_modeChanged)
+        g_modeChanged();
 }
 
-void toggleMode() { setMode(g_mode == Mode::Light ? Mode::Dark : Mode::Light); }
+void setMode(Mode m) {
+    setPreference(m == Mode::Dark ? Pref::Dark : Pref::Light);
+}
+
+void setPreference(Pref p) {
+    if (p == g_pref) return;
+    g_pref = p;
+    applyMode();
+}
+
+void toggleMode() {
+    setPreference(resolveMode() == Mode::Dark ? Pref::Light : Pref::Dark);
+}
+
+void setModeChangedCallback(ModeChangedCallback cb) { g_modeChanged = std::move(cb); }
+
+void init() {
+    ensureSystemWatch();
+    g_mode = resolveMode();
+    clearIconCache();
+    applyStylesheet();
+}
 
 // ---------------------------------------------------------------- QSS -----
 

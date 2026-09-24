@@ -394,15 +394,39 @@ void MainWindow::buildActions() {
     viewMenu->addAction(boundaryHandles);
     viewMenu->addSeparator();
 
-    QAction* themeToggle = new QAction(tr("Toggle Dark Mode"), this);
-    themeToggle->setCheckable(true);
-    themeToggle->setChecked(Theme::mode() == Theme::Mode::Dark);
-    overrideShortcut(themeToggle, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
-    connect(themeToggle, &QAction::toggled, this, [this](bool on) {
-        Theme::setMode(on ? Theme::Mode::Dark : Theme::Mode::Light);
-        syncColorWell();
+    QMenu* themeMenu = viewMenu->addMenu(tr("Theme Preference"));
+    QActionGroup* themeGroup = new QActionGroup(this);
+    themeGroup->setExclusive(true);
+    auto* sysThemeAct = themeMenu->addAction(tr("Use System Theme"));
+    sysThemeAct->setCheckable(true);
+    auto* darkThemeAct = themeMenu->addAction(tr("Dark Mode"));
+    darkThemeAct->setCheckable(true);
+    auto* lightThemeAct = themeMenu->addAction(tr("Light Mode"));
+    lightThemeAct->setCheckable(true);
+    themeGroup->addAction(sysThemeAct);
+    themeGroup->addAction(darkThemeAct);
+    themeGroup->addAction(lightThemeAct);
+
+    const Theme::Pref pref = Theme::preference();
+    QAction* currentTheme =
+        pref == Theme::Pref::System ? sysThemeAct
+        : pref == Theme::Pref::Dark ? darkThemeAct
+                                    : lightThemeAct;
+    currentTheme->setChecked(true);
+
+    connect(sysThemeAct, &QAction::triggered, this, [this] {
+        Theme::setPreference(Theme::Pref::System);
     });
-    viewMenu->addAction(themeToggle);
+    connect(darkThemeAct, &QAction::triggered, this, [this] {
+        Theme::setPreference(Theme::Pref::Dark);
+    });
+    connect(lightThemeAct, &QAction::triggered, this, [this] {
+        Theme::setPreference(Theme::Pref::Light);
+    });
+
+    overrideShortcut(themeMenu->menuAction(),
+                     QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
+    Theme::setModeChangedCallback([this] { syncColorWell(); });
 }
 
 void MainWindow::openResizeDialog() {
@@ -803,6 +827,10 @@ void MainWindow::buildCentral() {
 
     setCentralWidget(host);
     placeSizePanel();
+}
+
+MainWindow::~MainWindow() {
+    Theme::setModeChangedCallback(nullptr);
 }
 
 void MainWindow::placeSizePanel() {

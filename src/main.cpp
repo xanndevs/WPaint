@@ -25,8 +25,7 @@ int main(int argc, char** argv) {
 
     if (dark)
         Theme::setMode(Theme::Mode::Dark);
-
-    app.setStyleSheet(Theme::stylesheet(Theme::tokens()));
+    Theme::init();
 
     MainWindow win;
     win.show();
