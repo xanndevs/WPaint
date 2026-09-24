@@ -14,6 +14,7 @@ qt_add_executable(wpaint
     resources.qrc
     src/Theme.cpp
     src/DrawingUtils.cpp
+    src/FluentSlider.cpp
     src/ColorState.cpp
     src/ColorDialog.cpp
     src/LayerStack.cpp
