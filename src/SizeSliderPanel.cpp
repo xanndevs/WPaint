@@ -1,19 +1,25 @@
 #include "SizeSliderPanel.h"
 
+#include "FluentSlider.h"
+#include "Theme.h"
+
+#include <QGraphicsDropShadowEffect>
 #include <QLabel>
-#include <QSlider>
 #include <QVBoxLayout>
 
 SizeSliderPanel::SizeSliderPanel(QWidget* parent) : QWidget(parent) {
-    setObjectName("SizeSliderPanel");
-    setFixedWidth(48);
+    const auto& t = Theme::tokens();
 
-    m_slider = new QSlider(Qt::Vertical);
+    setObjectName("SizeSliderPanel");
+    setAttribute(Qt::WA_StyledBackground, true);
+    setFixedSize(t.sizePanelW, t.sizePanelH);
+
+    m_slider = new FluentSlider(Qt::Vertical);
     m_slider->setRange(1, 64);
     m_slider->setValue(4);
     m_slider->setSingleStep(1);
     m_slider->setPageStep(4);
-    m_slider->setInvertedAppearance(true);
+    m_slider->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_slider->setObjectName("SizeSlider");
 
     m_value = new QLabel("4", this);
@@ -25,11 +31,17 @@ SizeSliderPanel::SizeSliderPanel(QWidget* parent) : QWidget(parent) {
     caption->setAlignment(Qt::AlignCenter);
 
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(4, 10, 4, 6);
-    layout->setSpacing(4);
+    layout->setContentsMargins(4, 14, 4, 8);
+    layout->setSpacing(2);
     layout->addWidget(m_slider, 1);
     layout->addWidget(m_value);
     layout->addWidget(caption);
+
+    auto* shadow = new QGraphicsDropShadowEffect(this);
+    shadow->setBlurRadius(20);
+    shadow->setOffset(0, 4);
+    shadow->setColor(t.panelShadow);
+    setGraphicsEffect(shadow);
 
     connect(m_slider, &QSlider::valueChanged, this, [this](int v) {
         m_value->setText(QString::number(v));
