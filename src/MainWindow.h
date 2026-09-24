@@ -13,7 +13,12 @@
 class QAction;
 class QCloseEvent;
 class QDockWidget;
+class QEnterEvent;
+class QEvent;
 class QLabel;
+class QMouseEvent;
+class QPaintEvent;
+class QResizeEvent;
 class QScrollArea;
 class QSlider;
 class QToolButton;
@@ -47,6 +52,28 @@ private:
     QColor m_secondary = QColor("#FFFFFF");
 };
 
+// Full-size palette swatch. QToolButton can't hold a small fixed size here:
+// the generic QToolButton stylesheet rule inflates every styled instance to
+// ~28px, so swatches are plain widgets painted edge-to-edge.
+class PaletteButton : public QWidget {
+    Q_OBJECT
+public:
+    PaletteButton(const QColor& col, int size, QWidget* parent = nullptr);
+
+signals:
+    void clicked();
+
+protected:
+    void paintEvent(QPaintEvent* ev) override;
+    void mousePressEvent(QMouseEvent* ev) override;
+    void enterEvent(QEnterEvent* ev) override;
+    void leaveEvent(QEvent* ev) override;
+
+private:
+    QColor m_col;
+    bool m_hover = false;
+};
+
 class MainWindow : public QMainWindow {
     Q_OBJECT
 public:
@@ -56,6 +83,7 @@ public:
 
 protected:
     void closeEvent(QCloseEvent* ev) override;
+    void resizeEvent(QResizeEvent* ev) override;
 
 private:
     // construction
@@ -65,9 +93,11 @@ private:
     void buildCentral();
     void buildDocks();
     void buildStatusBar();
+    void placeSizePanel();
+    bool eventFilter(QObject* watched, QEvent* ev) override;
     QWidget* toolCluster(const QString& caption, const QList<QWidget*>& controls);
     QWidget* divider();
-    QToolButton* toolButtonFor(ToolId id);
+    QToolButton* toolButtonFor(ToolId id, int size = 0);
 
     // behavior
     void selectTool(ToolId id);

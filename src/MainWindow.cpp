@@ -4,6 +4,7 @@
 #include "ColorDialog.h"
 #include "CopilotPanel.h"
 #include "Commands.h"
+#include "FluentSlider.h"
 #include "Layer.h"
 #include "LayerStack.h"
 #include "LayersPanel.h"
@@ -20,6 +21,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
+#include <QGridLayout>
 #include <QGuiApplication>
 #include <QImageReader>
 #include <QImageWriter>
@@ -32,6 +34,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QResizeEvent>
 #include <QScrollArea>
 #include <QSlider>
 #include <QStatusBar>
@@ -46,8 +49,8 @@
 
 namespace {
 
-constexpr QSize kDefaultSize(816, 461);
-constexpr int kPaletteSize = 16;
+constexpr QSize kDefaultSize(400, 400);
+constexpr int kPaletteSize = 18;
 
 const QList<QColor> kPalette = {
     QColor("#FFFFFF"), QColor("#000000"), QColor("#888888"), QColor("#A3867A"),
@@ -100,6 +103,28 @@ QIcon renderedIcon(const QString& svgName, int px) {
     return ic;
 }
 
+// A split button whose gallery caret is always visible at the bottom. The QSS
+// "menu-indicator" sub-control already carries the caret for InstantPopup
+// buttons; MenuButtonPopup buttons only draw that indicator while the menu is
+// open, so paint it here as well.
+class PopupButton : public QToolButton {
+public:
+    using QToolButton::QToolButton;
+
+protected:
+    void paintEvent(QPaintEvent* e) override {
+        QToolButton::paintEvent(e);
+        if (popupMode() != QToolButton::MenuButtonPopup || !menu())
+            return;
+        QPainter p(this);
+        p.setRenderHint(QPainter::Antialiasing, true);
+        p.setPen(Qt::NoPen);
+        p.setBrush(Theme::tokens().textSecondary);
+        const int w = 14, h = 5;
+        p.drawRoundedRect(QRect(width() / 2 - w / 2, height() - h - 1, w, h), 2, 2);
+    }
+};
+
 } // namespace
 
 // --------------------------------------------------------------------------
@@ -109,8 +134,8 @@ QIcon renderedIcon(const QString& svgName, int px) {
 ColorWellButton::ColorWellButton(QWidget* parent)
     : QWidget(parent) {
     setObjectName("ColorWell");
-    setFixedSize(48, 38);
-    setToolTip(ColorWellButton::tr("Left-click: edit color 1, right-click: edit color 2"));
+    setFixedSize(40, 40);
+    setToolTip(ColorWellButton::tr("Left-click: Primary color, right-click: Secondary color"));
 }
 
 void ColorWellButton::setColors(const QColor& p, const QColor& s) {
@@ -121,7 +146,7 @@ void ColorWellButton::setColors(const QColor& p, const QColor& s) {
 
 void ColorWellButton::paintEvent(QPaintEvent*) {
     QPainter p(this);
-    const int edge = 8;
+    const int edge = width() / 3;
     const QRect front(edge, edge, width() - edge, height() - edge);
     const QRect back(0, 0, width() - edge, height() - edge);
 
@@ -142,14 +167,43 @@ void ColorWellButton::mousePressEvent(QMouseEvent* ev) {
     ev->accept();
 }
 
+PaletteButton::PaletteButton(const QColor& col, int size, QWidget* parent)
+    : QWidget(parent), m_col(col) {
+    setFixedSize(size, size);
+    setToolTip(col.name());
+    setMouseTracking(true);
+    setFocusPolicy(Qt::NoFocus);
+    setCursor(Qt::PointingHandCursor);
+}
+
+void PaletteButton::paintEvent(QPaintEvent*) {
+    QPainter p(this);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setPen(QPen(m_hover ? Theme::tokens().accent : Theme::tokens().divider,
+                  m_hover ? 2 : 1));
+    p.setBrush(m_col);
+    p.drawRoundedRect(QRectF(0.5, 0.5, width() - 1.0, height() - 1.0), 2, 2);
+}
+
+void PaletteButton::mousePressEvent(QMouseEvent* ev) {
+    if (ev->button() == Qt::LeftButton)
+        emit clicked();
+    else if (ev->button() == Qt::RightButton)
+        emit customContextMenuRequested(ev->pos());
+    ev->accept();
+}
+
+void PaletteButton::enterEvent(QEnterEvent*) { m_hover = true; update(); }
+void PaletteButton::leaveEvent(QEvent*) { m_hover = false; update(); }
+
 // --------------------------------------------------------------------------
 // MainWindow
 // --------------------------------------------------------------------------
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(tr("WPaint — Untitled"));
-    resize(1240, 800);
-    setMinimumSize(960, 640);
+    resize(1280, 720);
+    setMinimumSize(890, 600);
 
     m_stack = new LayerStack(this);
     m_undo = new QUndoStack(this);
@@ -248,13 +302,19 @@ void MainWindow::buildActions() {
     connect(exitAct, &QAction::triggered, this, &MainWindow::close);
 
     // Edit
-    m_undoAction = m_undo->createUndoAction(this, tr("Undo"));
+    m_undoAction = new QAction(tr("Undo"), this);
     overrideShortcut(m_undoAction, QKeySequence::Undo);
-    m_redoAction = m_undo->createRedoAction(this, tr("Redo"));
+    connect(m_undoAction, &QAction::triggered, this, &MainWindow::doUndo);
+    m_redoAction = new QAction(tr("Redo"), this);
     overrideShortcut(m_redoAction, QKeySequence::Redo);
+    connect(m_redoAction, &QAction::triggered, this, &MainWindow::doRedo);
     QAction* redoAlt = new QAction(tr("Redo (alt)"), this);
     overrideShortcut(redoAlt, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
-    connect(redoAlt, &QAction::triggered, m_undo, &QUndoStack::redo);
+    connect(redoAlt, &QAction::triggered, this, &MainWindow::doRedo);
+    connect(m_undo, &QUndoStack::canUndoChanged, m_undoAction, &QAction::setEnabled);
+    connect(m_undo, &QUndoStack::canRedoChanged, m_redoAction, &QAction::setEnabled);
+    m_redoAction->setEnabled(false);
+    m_undoAction->setEnabled(false);
 
     m_cutAction = new QAction(tr("Cut"), this);
     overrideShortcut(m_cutAction, QKeySequence::Cut);
@@ -297,6 +357,12 @@ void MainWindow::buildActions() {
     overrideShortcut(zoomFit, QKeySequence("Ctrl+9"));
     connect(zoomFit, &QAction::triggered, m_canvas, &CanvasView::zoomFit);
 
+    QAction* boundaryHandles = new QAction(tr("Show Canvas Resize Handles"), this);
+    boundaryHandles->setCheckable(true);
+    boundaryHandles->setChecked(m_canvas->boundaryHandlesEnabled());
+    connect(boundaryHandles, &QAction::toggled, m_canvas,
+            &CanvasView::setBoundaryHandlesEnabled);
+
     QMenu* fileMenu = menuBar()->addMenu(tr("File"));
     fileMenu->addAction(newAct);
     fileMenu->addAction(openAct);
@@ -324,6 +390,8 @@ void MainWindow::buildActions() {
     viewMenu->addAction(zoomOut);
     viewMenu->addAction(zoomActual);
     viewMenu->addAction(zoomFit);
+    viewMenu->addSeparator();
+    viewMenu->addAction(boundaryHandles);
     viewMenu->addSeparator();
 
     QAction* themeToggle = new QAction(tr("Toggle Dark Mode"), this);
@@ -375,10 +443,17 @@ void MainWindow::buildToolbar() {
 
     const auto& specs = ToolRegistry::specs();
 
-    // Selection
+    // Selection: large standalone 2x button on the far left.
     {
         QList<QWidget*> c;
-        c << toolButtonFor(ToolId::Select);
+auto* selBtn = toolButtonFor(ToolId::Select);
+        const int big = 2 * Theme::tokens().toolbarBtn;
+        const int selIcon = 2 * 20;
+        selBtn->setProperty("wpBig", 1);
+        selBtn->setFixedSize(big, big);
+        Theme::setIcon(selBtn, ToolRegistry::spec(ToolId::Select).icon, selIcon);
+        selBtn->setIconSize(QSize(selIcon, selIcon));
+        c << selBtn;
         bar->addWidget(toolCluster(tr("Selection"), c));
     }
     bar->addWidget(divider());
@@ -387,13 +462,53 @@ void MainWindow::buildToolbar() {
     {
         QList<QWidget*> c;
         c << toolButtonFor(ToolId::Crop);
-        auto* resizeBtn = new QToolButton(bar);
-        resizeBtn->setCheckable(false);
-        resizeBtn->setToolTip(tr("Resize and rotate"));
-        Theme::setIcon(resizeBtn, "resize");
-        connect(resizeBtn, &QToolButton::clicked, this, [this] { openResizeDialog(); });
-        c << resizeBtn;
+
+        auto* flipBtn = new QToolButton(bar);
+        flipBtn->setToolTip(tr("Flip horizontal"));
+        Theme::setIcon(flipBtn, "flip-horizontal");
+        connect(flipBtn, &QToolButton::clicked, this, [this] {
+            if (m_canvas->hasSelection())
+                m_canvas->flipSelection(Qt::Horizontal);
+            else
+                m_canvas->flipCanvas(Qt::Horizontal);
+        });
+        c << flipBtn;
+
+        auto* rotL = new QToolButton(bar);
+        rotL->setToolTip(tr("Rotate left"));
+        Theme::setIcon(rotL, "rotate-left");
+        connect(rotL, &QToolButton::clicked, this, [this] {
+            if (m_canvas->hasSelection())
+                m_canvas->rotateSelection(-90);
+            else
+                m_canvas->rotateCanvas(-90);
+        });
+        c << rotL;
+
+        auto* rotR = new QToolButton(bar);
+        rotR->setToolTip(tr("Rotate right"));
+        Theme::setIcon(rotR, "rotate-right");
+        connect(rotR, &QToolButton::clicked, this, [this] {
+            if (m_canvas->hasSelection())
+                m_canvas->rotateSelection(90);
+            else
+                m_canvas->rotateCanvas(90);
+        });
+        c << rotR;
+
         bar->addWidget(toolCluster(tr("Image"), c));
+
+        auto* resizeBtn = new QToolButton(this);
+        const int big = 2 * Theme::tokens().toolbarBtn;
+        const int iconPx = 2 * 20;
+        resizeBtn->setProperty("wpBig", 1);
+        resizeBtn->setFixedSize(big, big);
+        resizeBtn->setToolTip(tr("Resize and rotate"));
+        Theme::setIcon(resizeBtn, "resize", iconPx);
+        resizeBtn->setIconSize(QSize(iconPx, iconPx));
+        connect(resizeBtn, &QToolButton::clicked, this,
+                [this] { openResizeDialog(); });
+        bar->addWidget(toolCluster(QString(), {resizeBtn}));
     }
     bar->addWidget(divider());
 
@@ -409,17 +524,21 @@ void MainWindow::buildToolbar() {
 
     // Brushes
     {
-        m_brushButton = new QToolButton(bar);
+        const int big = 2 * Theme::tokens().toolbarBtn;
+        const int iconPx = 2 * 20;
+        m_brushButton = new PopupButton(bar);
         m_brushButton->setObjectName("MenuButtonPopup");
+        m_brushButton->setProperty("wpBig", 1);
         m_brushButton->setPopupMode(QToolButton::MenuButtonPopup);
         m_brushButton->setToolTip(tr("Brush"));
-        Theme::setIcon(m_brushButton, "brush");
+        m_brushButton->setFixedSize(big, big);
+        Theme::setIcon(m_brushButton, "brush", iconPx);
+        m_brushButton->setIconSize(QSize(iconPx, iconPx));
         connect(m_brushButton, &QToolButton::clicked, this,
                 [this] { selectTool(ToolId::Brush); });
         QMenu* brushMenu = new QMenu(m_brushButton);
         for (BrushStyle s : kBrushStyles) {
             QAction* a = brushMenu->addAction(brushStyleName(s));
-            a->setCheckable(true);
             connect(a, &QAction::triggered, this, [this, s] { applyBrushStyle(s); });
         }
         m_brushButton->setMenu(brushMenu);
@@ -429,11 +548,16 @@ void MainWindow::buildToolbar() {
 
     // Shapes
     {
+        const int big = 2 * Theme::tokens().toolbarBtn;
+        const int iconPx = 2 * 20;
         m_shapeButton = new QToolButton(bar);
         m_shapeButton->setObjectName("MenuButtonPopup");
+        m_shapeButton->setProperty("wpBig", 1);
         m_shapeButton->setPopupMode(QToolButton::InstantPopup);
         m_shapeButton->setToolTip(tr("Shapes"));
-        Theme::setIcon(m_shapeButton, "shape-rect");
+        m_shapeButton->setFixedSize(big, big);
+        Theme::setIcon(m_shapeButton, "shape-rect", iconPx);
+        m_shapeButton->setIconSize(QSize(iconPx, iconPx));
         QMenu* shapeMenu = new QMenu(m_shapeButton);
         QActionGroup* grp = new QActionGroup(shapeMenu);
         grp->setExclusive(true);
@@ -442,8 +566,8 @@ void MainWindow::buildToolbar() {
             QAction* a = shapeMenu->addAction(Theme::icon(s.icon, 18), s.name);
             grp->addAction(a);
             const ToolId id = s.id;
-            connect(a, &QAction::triggered, this, [this, id, a] {
-                m_shapeButton->setIcon(Theme::icon(ToolRegistry::spec(id).icon, 20));
+            connect(a, &QAction::triggered, this, [this, id, a, iconPx] {
+                m_shapeButton->setIcon(Theme::icon(ToolRegistry::spec(id).icon, iconPx));
                 applyShape(static_cast<ShapeKit::Shape>(id));
                 selectTool(id);
                 a->setChecked(true);
@@ -458,9 +582,12 @@ void MainWindow::buildToolbar() {
 
         m_shapeStyleButton = new QToolButton(bar);
         m_shapeStyleButton->setObjectName("MenuButtonPopup");
+        m_shapeStyleButton->setProperty("wpBig", 1);
         m_shapeStyleButton->setPopupMode(QToolButton::InstantPopup);
         m_shapeStyleButton->setToolTip(tr("Shape fill pattern"));
-        Theme::setIcon(m_shapeStyleButton, "shape-outline");
+        m_shapeStyleButton->setFixedSize(big, big);
+        Theme::setIcon(m_shapeStyleButton, "shape-outline", iconPx);
+        m_shapeStyleButton->setIconSize(QSize(iconPx, iconPx));
         QMenu* styleMenu = new QMenu(m_shapeStyleButton);
         QActionGroup* styleGrp = new QActionGroup(styleMenu);
         styleGrp->setExclusive(true);
@@ -490,105 +617,138 @@ void MainWindow::buildToolbar() {
 
         QWidget* paletteHost = new QWidget(this);
         paletteHost->setObjectName("PaletteHost");
+        paletteHost->setFixedHeight(2 * kPaletteSize + 2);
         auto* grid = new QGridLayout(paletteHost);
         grid->setContentsMargins(0, 0, 0, 0);
         grid->setSpacing(2);
-        m_palette.reserve(kPalette.size());
         for (int i = 0; i < kPalette.size(); ++i) {
-            auto* b = new QToolButton(paletteHost);
-            b->setObjectName("PaletteButton");
-            b->setFixedSize(kPaletteSize, kPaletteSize);
-            b->setToolTip(kPalette.at(i).name());
             const QColor col = kPalette.at(i);
-            QPixmap pm(kPaletteSize * 2, kPaletteSize * 2);
-            pm.fill(col);
-            pm.setDevicePixelRatio(2.0);
-            b->setIcon(QIcon(pm));
-            b->setIconSize(QSize(kPaletteSize, kPaletteSize));
-            connect(b, &QToolButton::clicked, this, [this, col] {
+            auto* b = new PaletteButton(col, kPaletteSize, paletteHost);
+            connect(b, &PaletteButton::clicked, this, [this, col] {
                 m_canvas->setColors(col, m_canvas->secondary());
                 syncColorWell();
             });
-            connect(b, &QToolButton::customContextMenuRequested, this,
+            connect(b, &QWidget::customContextMenuRequested, this,
                     [this, col](const QPoint&) {
                         m_canvas->setColors(m_canvas->primary(), col);
                         syncColorWell();
                     });
-            b->setContextMenuPolicy(Qt::CustomContextMenu);
             grid->addWidget(b, i / 10, i % 10);
         }
 
-        auto* wheelBtn = new QToolButton(this);
-        wheelBtn->setObjectName("PaletteButton");
-        wheelBtn->setFixedSize(kPaletteSize + 4, kPaletteSize + 4);
-        wheelBtn->setToolTip(tr("Edit colors"));
-        Theme::setIcon(wheelBtn, "colorwheel", kPaletteSize);
-        connect(wheelBtn, &QToolButton::clicked, this, [this] { editColor(true); });
+        // auto* wheelBtn = new QToolButton(this);
+        // wheelBtn->setFixedSize(Theme::tokens().toolbarBtn, Theme::tokens().toolbarBtn);
+        // wheelBtn->setToolTip(tr("Edit colors"));
+        // Theme::setIcon(wheelBtn, "colorwheel", Theme::tokens().toolbarBtn - 10);
+        // connect(wheelBtn, &QToolButton::clicked, this, [this] { editColor(true); });
 
         QList<QWidget*> colorsWidgets;
-        colorsWidgets << m_well << paletteHost << wheelBtn;
+        m_well->setProperty("wpSpanRows", true);
+        colorsWidgets << m_well << paletteHost;
         bar->addWidget(toolCluster(tr("Colors"), colorsWidgets));
     }
     bar->addWidget(divider());
 
-    // Copilot
-    {
-        auto* copilotBtn = new QToolButton(bar);
-        copilotBtn->setToolTip(tr("Show Copilot"));
-        copilotBtn->setCheckable(true);
-        copilotBtn->setChecked(false);
-        copilotBtn->setIcon(renderedIcon("copilot", 20));
-        connect(copilotBtn, &QToolButton::toggled, this, [this](bool on) {
-            m_copilotDock->setVisible(on);
-        });
-        bar->addWidget(toolCluster(tr("Copilot"), {copilotBtn}));
-    }
-    bar->addWidget(divider());
+    // // Copilot
+    // {
+    //     auto* copilotBtn = new QToolButton(bar);
+    //     copilotBtn->setToolTip(tr("Show Copilot"));
+    //     copilotBtn->setCheckable(true);
+    //     copilotBtn->setChecked(false);
+    //     copilotBtn->setIcon(renderedIcon("copilot", 20));
+    //     connect(copilotBtn, &QToolButton::toggled, this, [this](bool on) {
+    //         m_copilotDock->setVisible(on);
+    //     });
+    //     bar->addWidget(toolCluster(tr("Copilot"), {copilotBtn}));
+    // }
+    // bar->addWidget(divider());
 
     // Layers
     {
         auto* layersToggle = new QToolButton(bar);
+        const int big = 2 * Theme::tokens().toolbarBtn;
+        const int iconPx = 2 * 20;
         layersToggle->setToolTip(tr("Show layers panel"));
         layersToggle->setCheckable(true);
         layersToggle->setChecked(true);
-        Theme::setIcon(layersToggle, "layer-stack");
+        layersToggle->setProperty("wpBig", 1);
+
+        layersToggle->sizePolicy().setHorizontalPolicy(QSizePolicy::Fixed);
+        layersToggle->setFixedSize(big, big);
+        Theme::setIcon(layersToggle, "layer-stack", iconPx);
+        layersToggle->setIconSize(QSize(iconPx, iconPx));
+
         connect(layersToggle, &QToolButton::toggled, this, [this](bool on) {
             m_layersDock->setVisible(on);
         });
-        auto* addBtn = new QToolButton(bar);
-        addBtn->setToolTip(tr("Add layer"));
-        Theme::setIcon(addBtn, "layer-add");
-        connect(addBtn, &QToolButton::clicked, this, &MainWindow::addLayer);
-        auto* delBtn = new QToolButton(bar);
-        delBtn->setToolTip(tr("Delete layer"));
-        Theme::setIcon(delBtn, "layer-delete");
-        connect(delBtn, &QToolButton::clicked, this, [this] {
-            removeLayer(m_stack->activeIndex());
-        });
-        bar->addWidget(toolCluster(tr("Layers"), {layersToggle, addBtn, delBtn}));
+        // auto* addBtn = new QToolButton(bar);
+        // addBtn->setToolTip(tr("Add layer"));
+        // Theme::setIcon(addBtn, "layer-add");
+        // connect(addBtn, &QToolButton::clicked, this, &MainWindow::addLayer);
+        // auto* delBtn = new QToolButton(bar);
+        // delBtn->setToolTip(tr("Delete layer"));
+        // Theme::setIcon(delBtn, "layer-delete");
+        //connect(delBtn, &QToolButton::clicked, this, [this] {
+        //    removeLayer(m_stack->activeIndex());
+        //});
+        bar->addWidget(toolCluster(tr("Layers"), {layersToggle}));
     }
 }
 
 QWidget* MainWindow::toolCluster(const QString& caption,
                                  const QList<QWidget*>& controls) {
+    const auto& t = Theme::tokens();
     auto* host = new QWidget(this);
     auto* v = new QVBoxLayout(host);
     v->setContentsMargins(6, 4, 6, 4);
     v->setSpacing(2);
 
-    auto* row = new QWidget(host);
-    auto* h = new QHBoxLayout(row);
-    h->setContentsMargins(0, 0, 0, 0);
-    h->setSpacing(2);
-    for (QWidget* c : controls)
-        h->addWidget(c);
-    h->addStretch(1);
+    auto itemWidth = [](QWidget* w) {
+        if (w->minimumWidth() == w->maximumWidth() && w->minimumWidth() > 0)
+            return w->minimumWidth();
+        return w->sizeHint().width();
+    };
+
+    // Two-row grid: the top row is two standard buttons wide; a control that
+    // no longer fits wraps onto the second row. Buttons render wider than the
+    // toolbarBtn token (QSS padding + border), so measure a real control.
+    auto* rows = new QWidget(host);
+    auto* grid = new QGridLayout(rows);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(2);
+    grid->setVerticalSpacing(2);
+    grid->setRowStretch(0, 1);
+    grid->setRowStretch(1, 1);
+
+    const int btn = controls.isEmpty() ? t.toolbarBtn : itemWidth(controls.first());
+    const int budget = 2 * btn + grid->horizontalSpacing();
+    const int big = 2 * t.toolbarBtn;
+
+    int row = 0;
+    int used = 0;
+    int col[2] = {0, 0};
+    for (QWidget* c : controls) {
+        const int w = itemWidth(c);
+        if (w >= big || c->property("wpSpanRows").toBool()) {
+            grid->addWidget(c, 0, col[0]++, 2, 1, Qt::AlignCenter);
+            used = budget;
+            continue;
+        }
+        if (row == 0 && used > 0 && used + w > budget)
+            row = 1;
+        grid->addWidget(c, row, col[row]++);
+        if (row == 0)
+            used += w;
+    }
 
     auto* cap = new QLabel(caption, host);
     cap->setObjectName("ClusterCaption");
     cap->setAlignment(Qt::AlignHCenter);
 
-    v->addWidget(row);
+    // Reserve a uniform two-row slot so single-item clusters match the rest.
+    host->setMinimumHeight(2 * t.toolbarBtn + 2 + t.captionH + 2 + 8);
+
+    v->addWidget(rows);
     v->addWidget(cap);
     return host;
 }
@@ -596,17 +756,22 @@ QWidget* MainWindow::toolCluster(const QString& caption,
 QWidget* MainWindow::divider() {
     auto* d = new QWidget(this);
     d->setObjectName("ToolbarDivider");
-    d->setFixedSize(1, 34);
+    d->setFixedWidth(1);
+    d->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
     return d;
 }
 
-QToolButton* MainWindow::toolButtonFor(ToolId id) {
+QToolButton* MainWindow::toolButtonFor(ToolId id, int size) {
     if (QToolButton* existing = m_toolButtons.value(id, nullptr))
         return existing;
     const auto& s = ToolRegistry::spec(id);
     auto* b = new QToolButton(this);
     b->setCheckable(true);
     b->setToolTip(s.name);
+    if (size > 0) {
+        b->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        b->setFixedSize(size, size);
+    }
     Theme::setIcon(b, s.icon);
     connect(b, &QToolButton::clicked, this, [this, id] { selectTool(id); });
     m_toolButtons.insert(id, b);
@@ -622,9 +787,6 @@ void MainWindow::buildCentral() {
     top->setContentsMargins(0, 0, 0, 0);
     top->setSpacing(0);
 
-    m_sizePanel = new SizeSliderPanel(host);
-    top->addWidget(m_sizePanel);
-
     m_scrollArea = new QScrollArea(host);
     m_scrollArea->setWidgetResizable(false);
     m_scrollArea->setAlignment(Qt::AlignCenter);
@@ -634,7 +796,34 @@ void MainWindow::buildCentral() {
     m_canvas->attachScrollArea(m_scrollArea);
     top->addWidget(m_scrollArea, 1);
 
+    QWidget* viewport = m_scrollArea->viewport();
+    m_sizePanel = new SizeSliderPanel(viewport);
+    m_sizePanel->raise();
+    viewport->installEventFilter(this);
+
     setCentralWidget(host);
+    placeSizePanel();
+}
+
+void MainWindow::placeSizePanel() {
+    if (!m_sizePanel || !m_scrollArea)
+        return;
+    const auto& t = Theme::tokens();
+    const QSize vp = m_sizePanel->parentWidget()->size();
+    m_sizePanel->move(t.sizePanelGap,
+                      qMax(0, (vp.height() - m_sizePanel->height()) / 2));
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
+    if (m_sizePanel && watched == m_scrollArea->viewport() &&
+        ev->type() == QEvent::Resize)
+        placeSizePanel();
+    return QMainWindow::eventFilter(watched, ev);
+}
+
+void MainWindow::resizeEvent(QResizeEvent* ev) {
+    QMainWindow::resizeEvent(ev);
+    placeSizePanel();
 }
 
 // -------------------------------------------------------------- docks -----
@@ -648,15 +837,15 @@ void MainWindow::buildDocks() {
                                   Qt::LeftDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, m_layersDock);
 
-    m_copilotPanel = new CopilotPanel(this);
-    m_copilotDock = new QDockWidget(tr("Copilot"), this);
-    m_copilotDock->setObjectName("CopilotDock");
-    m_copilotDock->setWidget(m_copilotPanel);
-    m_copilotDock->setAllowedAreas(Qt::RightDockWidgetArea);
-    addDockWidget(Qt::RightDockWidgetArea, m_copilotDock);
-    m_copilotDock->hide();
-    // stack below the layers panel
-    resizeDocks({m_layersDock, m_copilotDock}, {120, 300}, Qt::Vertical);
+    // m_copilotPanel = new CopilotPanel(this);
+    // m_copilotDock = new QDockWidget(tr("Copilot"), this);
+    // m_copilotDock->setObjectName("CopilotDock");
+    // m_copilotDock->setWidget(m_copilotPanel);
+    // m_copilotDock->setAllowedAreas(Qt::RightDockWidgetArea);
+    // addDockWidget(Qt::RightDockWidgetArea, m_copilotDock);
+    // m_copilotDock->hide();
+    // // stack below the layers panel
+    resizeDocks({m_layersDock, /**m_copilotDock */}, {200,}, Qt::Vertical);
 }
 
 // ---------------------------------------------------------- status bar -----
@@ -674,13 +863,12 @@ void MainWindow::buildStatusBar() {
     m_zoomLabel = new QLabel("100%", this);
     m_zoomLabel->setObjectName("StatusZoomLabel");
     m_zoomLabel->setAlignment(Qt::AlignCenter);
+    m_zoomLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
 
-    m_zoomSlider = new QSlider(Qt::Horizontal, this);
-    m_zoomSlider->setRange(20, 400);
+    m_zoomSlider = new FluentSlider(Qt::Horizontal);
+    m_zoomSlider->setRange(20, 800);
     m_zoomSlider->setValue(100);
     m_zoomSlider->setFixedWidth(140);
-    m_zoomSlider->setTickInterval(40);
-    m_zoomSlider->setTickPosition(QSlider::TicksAbove);
     connect(m_zoomSlider, &QSlider::valueChanged, this, [this](int v) {
         if (m_zooming) return;
         m_canvas->setZoom(v / 100.0);
@@ -700,6 +888,7 @@ void MainWindow::buildStatusBar() {
     h->addWidget(m_zoomLabel);
     h->addWidget(m_zoomInBtn);
 
+    zoomHost->setFixedSize(h->sizeHint());
     statusBar()->addPermanentWidget(zoomHost);
 }
 
@@ -743,7 +932,7 @@ void MainWindow::syncColorWell() {
 void MainWindow::onZoomChanged(qreal zoom) {
     m_zoomLabel->setText(QStringLiteral("%1%").arg(qRound(zoom * 100)));
     m_zooming = true;
-    m_zoomSlider->setValue(qBound(20, qRound(zoom * 100), 400));
+    m_zoomSlider->setValue(qBound(20, qRound(zoom * 100), 800));
     m_zooming = false;
 }
 
@@ -775,6 +964,7 @@ void MainWindow::editColor(bool primary) {
 // -------------------------------------------------------------- file ------
 
 bool MainWindow::confirmDiscard() {
+    m_canvas->bakeActiveObject();
     if (m_undo->isClean())
         return true;
     const auto r = QMessageBox::warning(
@@ -841,6 +1031,7 @@ void MainWindow::openDocument() {
 }
 
 void MainWindow::installDocument(const LayerStack& loaded, const QString& path) {
+    m_canvas->bakeActiveObject();
     m_canvas->cancelFloating();
     m_undo->clear();
     m_stack->replaceAll(loaded.layers(), loaded.activeIndex());
@@ -871,6 +1062,7 @@ void MainWindow::saveDocumentAs() {
 }
 
 bool MainWindow::saveTo(const QString& path) {
+    m_canvas->bakeActiveObject();
     if (path.endsWith(QLatin1String(".wpa"), Qt::CaseInsensitive)) {
         const auto res = m_stack->saveProject(path);
         if (!res.ok) {
@@ -925,11 +1117,13 @@ void MainWindow::updateWindowTitle() {
 // ------------------------------------------------------------ edit ops ----
 
 void MainWindow::doUndo() {
+    m_canvas->bakeActiveObject(); // a pending shape becomes the top command
     m_canvas->weldFloating();
     m_undo->undo();
 }
 
 void MainWindow::doRedo() {
+    m_canvas->bakeActiveObject();
     m_canvas->weldFloating();
     m_undo->redo();
 }
@@ -996,6 +1190,7 @@ void MainWindow::doDelete() {
 // ------------------------------------------------------- layer helpers ----
 
 void MainWindow::runLayerCommand(const QString& text, std::function<void()> mutate) {
+    m_canvas->bakeActiveObject();
     const QList<Layer> before = m_stack->layers();
     mutate();
     m_undo->push(Commands::makeLayerList(m_stack, before, text));
