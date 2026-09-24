@@ -3,6 +3,7 @@
 #include "CanvasView.h"
 #include "DrawingUtils.h"
 #include "LayerStack.h"
+#include "Theme.h"
 
 #include <QColorDialog>
 #include <QFontComboBox>
@@ -106,14 +107,32 @@ QPainterPath path(Shape shape, const QRectF& r, const QPainterPath& curve) {
     return p;
 }
 
+void cubicControls(const QPointF& a, const QPointF& b,
+                   const QPointF& p1, bool p1Valid,
+                   const QPointF& p2, bool p2Valid,
+                   QPointF& c1, QPointF& c2) {
+    if (!p1Valid) { c1 = a; c2 = b; return; } // no anchor: keep the baseline straight
+    if (!p2Valid) {
+        // single bend through p1 at t = 0.5 with c2 pinned to the far end
+        c1 = (8.0 * p1 - a - 4.0 * b) / 3.0;
+        c2 = b;
+        return;
+    }
+    // two bends: pass through p1 at t = 1/3 and p2 at t = 2/3
+    c1 = 3.0 * p1 - 1.5 * p2 - (5.0 / 6.0) * a + (1.0 / 3.0) * b;
+    c2 = (27.0 * p1 - 8.0 * a - b - 12.0 * c1) / 6.0;
+}
+
 void draw(QPainter& p, Shape shape, const QRectF& r, ShapeStyle style,
           const QPen& pen, const QBrush& brush, const QPainterPath& curve) {
     if (shape == Shape::ShapeLine || shape == Shape::ShapeCurve) {
-        // Lines are always stroked (fill has no area).
+        // Lines are always stroked (fill has no area). Use the explicit
+        // endpoint path when supplied; it follows the cursor in every
+        // quadrant, unlike the bounding-box diagonal.
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
-        p.drawPath(shape == Shape::ShapeCurve ? curve
-                                              : path(shape, r, curve));
+        const QPainterPath fp = curve.isEmpty() ? path(shape, r, curve) : curve;
+        p.drawPath(fp);
         return;
     }
     const QPainterPath path_ = path(shape, r, curve);
@@ -393,6 +412,8 @@ public:
         if (ev->key() == Qt::Key_Escape) {
             if (c->floatingActive())
                 c->cancelFloatingLift();
+            else if (c->hasActiveObject())
+                c->clearActiveObject();
             else
                 c->clearSelection();
         }
@@ -451,6 +472,8 @@ void ShapeTool::setShape(ToolId shape) {
 void ShapeTool::mousePress(CanvasView* c, QMouseEvent* ev) {
     if (ev->button() != Qt::LeftButton) return;
     const QPointF p = c->toImage(ev->position());
+    if (c->hasActiveObject())
+        c->bakeActiveObject(); // finalize the previous shape before a new one
     if (m_shape == ToolId::ShapeCurve) {
         if (m_bendArm != 0) {
             m_bending = true;
@@ -518,6 +541,7 @@ void ShapeTool::keyPress(CanvasView* c, QKeyEvent* ev) {
         if (m_bending) { m_bending = false; m_bendArm = 0; }
         else if (m_active) { resetGesture(); }
         else if (m_bendArm) { m_bendArm = 0; }
+        else if (c->hasActiveObject()) { c->clearActiveObject(); }
         m_c1 = m_c2 = QPointF();
         c->requestRepaint();
         ev->accept();
@@ -539,11 +563,25 @@ void ShapeTool::paintOverlay(QPainter& p, CanvasView* c) const {
         const QPainterPath path = curvePath();
         if (!path.isEmpty())
             ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, c->secondary(), path);
+    } else if (m_shape == ToolId::ShapeLine) {
+        QPainterPath path;
+        path.moveTo(m_a);
+        path.lineTo(m_b);
+        ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, c->secondary(), path);
     } else {
         const QRectF r = QRectF(m_a, m_b).normalized();
         if (r.width() < 0.5 && r.height() < 0.5) return;
         ShapeKit::draw(p, m_shape, r, m_style, pen, c->secondary(), QPainterPath());
     }
+
+    // boundary guide: dashed box around the shape being painted
+    const QRectF guide = QRectF(m_a, m_b).normalized();
+    QPen bp(Theme::tokens().handleOutline, 1, Qt::DashLine);
+    bp.setCosmetic(true);
+    p.setRenderHint(QPainter::Antialiasing, false);
+    p.setPen(bp);
+    p.setBrush(Qt::NoBrush);
+    p.drawRect(guide);
 }
 
 QPen ShapeTool::makePen(CanvasView* c) const {
@@ -558,8 +596,13 @@ QPainterPath ShapeTool::curvePath() const {
     QPainterPath path;
     if (!m_active || m_shape != ToolId::ShapeCurve) return path;
     path.moveTo(m_a);
-    const QPointF c1 = m_bendArm >= 1 ? m_c1 : m_a;
-    const QPointF c2 = m_bendArm >= 2 ? m_c2 : m_b;
+    // An anchor is "live" as soon as its drag starts, so the curve bends
+    // while the mouse is down and stays frozen at the last seen shape while
+    // resting. Unset anchors never degenerate to an origin pull.
+    const bool p1 = m_bendArm >= 2 || m_bending;
+    const bool p2 = m_bendArm >= 2 && m_bending;
+    QPointF c1, c2;
+    ShapeKit::cubicControls(m_a, m_b, m_c1, p1, m_c2, p2, c1, c2);
     path.cubicTo(c1, c2, m_b);
     return path;
 }
@@ -574,27 +617,10 @@ void ShapeTool::resetGesture() {
 void ShapeTool::commitGesture(CanvasView* c) {
     if (!m_active && m_bendArm == 0 && !m_bending) return;
     const int layer = c->activeLayerIndex();
-    c->beginEdit(layer);
-    QPainter p(&c->layerImage(layer));
-    p.setRenderHint(QPainter::Antialiasing, true);
-    QPen pen = makePen(c);
     const QRectF r = QRectF(m_a, m_b).normalized();
-    const QPainterPath curve = curvePath();
-    ShapeKit::draw(p, m_shape, r, m_style, pen, c->secondary(), curve);
-    p.end();
-
-    QRect dirty;
-    if (m_shape == ToolId::ShapeCurve)
-        dirty = curve.boundingRect()
-                    .adjusted(-pen.width(), -pen.width(), pen.width(), pen.width())
-                    .toAlignedRect()
-                    .intersected(QRect(QPoint(0, 0), c->imageSize()));
-    else
-        dirty = r.adjusted(-pen.width(), -pen.width(), pen.width(), pen.width())
-                    .toAlignedRect()
-                    .intersected(QRect(QPoint(0, 0), c->imageSize()));
-    c->markDirty(layer, dirty);
-    c->commitEdit(name());
+    QPen pen = makePen(c);
+    c->attachShapeObject(layer, m_shape, m_style, pen.width(), pen.color(),
+                         c->secondary(), r, m_a, m_b, m_c1, m_c2);
     resetGesture();
     c->requestRepaint();
 }

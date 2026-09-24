@@ -45,6 +45,13 @@ using Shape = ToolId; // ShapeLine..ShapeArrow (leaf of ToolId)
 
 QPainterPath path(Shape shape, const QRectF& rect, const QPainterPath& curve);
 
+// Derive cubic control points so the curve passes through p1 (and, when
+// p2 is set, through p2) rather than merely being pulled toward them.
+void cubicControls(const QPointF& a, const QPointF& b,
+                   const QPointF& p1, bool p1Valid,
+                   const QPointF& p2, bool p2Valid,
+                   QPointF& c1, QPointF& c2);
+
 void draw(QPainter& p, Shape shape, const QRectF& rect, ShapeStyle style,
           const QPen& pen, const QBrush& brush, const QPainterPath& curve);
 
