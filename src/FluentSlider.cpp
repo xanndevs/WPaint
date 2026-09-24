@@ -110,8 +110,6 @@ void FluentSlider::paintEvent(QPaintEvent*) {
     const int travel = vertical ? track.height() : track.width();
     const int pos = vertical ? int(c.y()) - track.top()
                              : int(c.x()) - track.left();
-    const int cx = int(c.x());
-    const int cy = int(c.y());
 
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
