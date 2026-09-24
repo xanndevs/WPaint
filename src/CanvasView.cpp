@@ -18,6 +18,49 @@ namespace {
 constexpr int kPad = 20; // room for boundary handles
 constexpr qreal kMinZoom = 0.1;
 constexpr qreal kMaxZoom = 8.0;
+constexpr qreal kMinObjectDim = 2.0;
+
+// Grow/shrink a rectangle by dragging one of its 8 handles (0=TL, 1=TC, 2=TR,
+// 3=MR, 4=BR, 5=BC, 6=BL, 7=ML). With `mirror` the opposite edge/corner also
+// moves, i.e. the rect scales symmetrically about its centre.
+QRectF adjustResizeRect(const QRectF& r0, int handle, const QPointF& d,
+                        bool mirror, qreal minDim) {
+    qreal L = r0.left(), T = r0.top(), R = r0.right(), B = r0.bottom();
+    const bool west = handle == 0 || handle == 6 || handle == 7;
+    const bool east = handle == 2 || handle == 3 || handle == 4;
+    const bool north = handle == 0 || handle == 1 || handle == 2;
+    const bool south = handle == 4 || handle == 5 || handle == 6;
+    if (west) L += d.x();
+    if (east) R += d.x();
+    if (north) T += d.y();
+    if (south) B += d.y();
+    if (mirror) {
+        if (west) R -= d.x();
+        if (east) L -= d.x();
+        if (north) B -= d.y();
+        if (south) T -= d.y();
+    }
+    QRectF out(QPointF(qMin(L, R), qMin(T, B)), QPointF(qMax(L, R), qMax(T, B)));
+    if (out.width() < minDim) {
+        out.setX(out.center().x() - minDim / 2);
+        out.setWidth(minDim);
+    }
+    if (out.height() < minDim) {
+        out.setY(out.center().y() - minDim / 2);
+        out.setHeight(minDim);
+    }
+    return out;
+}
+
+Qt::CursorShape resizeCursorForHandle(int handle) {
+    switch (handle) {
+    case 0: case 4: return Qt::SizeFDiagCursor;
+    case 2: case 6: return Qt::SizeBDiagCursor;
+    case 1: case 5: return Qt::SizeVerCursor;
+    case 3: case 7: return Qt::SizeHorCursor;
+    default: return Qt::ArrowCursor;
+    }
+}
 } // namespace
 
 CanvasView::CanvasView(LayerStack* stack, QUndoStack* undo, QWidget* parent)
@@ -45,10 +88,209 @@ CanvasView::CanvasView(LayerStack* stack, QUndoStack* undo, QWidget* parent)
 void CanvasView::setColors(const QColor& p, const QColor& s) {
     m_primary = p;
     m_secondary = s;
+    if (m_hasObject) {
+        m_object.penColor = p;
+        m_object.fillColor = s;
+        update();
+    }
 }
 
 void CanvasView::setBrushSize(int s) {
     m_brushSize = qBound(1, s, 128);
+    update();
+}
+
+void CanvasView::setBoundaryHandlesEnabled(bool on) {
+    if (m_showBoundaryHandles == on) return;
+    m_showBoundaryHandles = on;
+    update();
+}
+
+// ------------------------------------------------ live shape object -------
+
+void CanvasView::attachShapeObject(int layer, ToolId shape, ShapeStyle style,
+                                   qreal penWidth, const QColor& penColor,
+                                   const QColor& fillColor, const QRectF& rect,
+                                   const QPointF& a, const QPointF& b,
+                                   const QPointF& c1, const QPointF& c2) {
+    clearSelection();
+    ShapeObject o;
+    o.layer = layer;
+    o.shape = shape;
+    o.style = style;
+    o.penWidth = penWidth;
+    o.penColor = penColor;
+    o.fillColor = fillColor;
+    o.rect = rect.normalized();
+    o.a = a;
+    o.b = b;
+    o.c1 = c1;
+    o.c2 = c2;
+    m_object = o;
+    m_hasObject = true;
+    update();
+}
+
+void CanvasView::clearActiveObject() {
+    m_objectDragging = false;
+    m_objectHandle = -1;
+    m_selFloatOrig = QImage();
+    if (!m_hasObject) return;
+    m_hasObject = false;
+    m_object = ShapeObject();
+    update();
+}
+
+// The exact image region a shape would touch once rendered, including the
+// pen/AA halo; used to size the undo patch for a bake.
+static QRect shapeBakeRect(const ShapeObject& o, const QSize& img) {
+    QRectF base = o.rect;
+    if (o.shape == ToolId::ShapeCurve) {
+        QPainterPath path;
+        path.moveTo(o.a);
+        QPointF c1, c2;
+        const bool a1 = !o.c1.isNull();
+        const bool a2 = !o.c2.isNull();
+        ShapeKit::cubicControls(o.a, o.b, o.c1, a1, o.c2, a2, c1, c2);
+        path.cubicTo(c1, c2, o.b);
+        base = path.boundingRect();
+    }
+    const qreal halo = qCeil(o.penWidth / 2.0) + 1.0;
+    return base.adjusted(-halo, -halo, halo, halo)
+        .toAlignedRect()
+        .intersected(QRect(QPoint(0, 0), img));
+}
+
+void CanvasView::bakeActiveObject() {
+    if (!m_hasObject) return;
+    m_objectDragging = false;
+    m_objectHandle = -1;
+    const ShapeObject o = m_object;
+    m_hasObject = false;
+    m_object = ShapeObject();
+    if (o.layer < 0 || o.layer >= m_stack->count()) return;
+    const QRect region = shapeBakeRect(o, imageSize());
+    if (region.isEmpty()) return;
+
+    beginEdit(o.layer);
+    QPainter p(&m_stack->layerAt(o.layer).image);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    paintShapeObject(p, o);
+    p.end();
+    markDirty(o.layer, region);
+    commitEdit(tr("Shape"));
+    update();
+}
+
+QPointF CanvasView::mapObjectPoint(const QRectF& fromR, const QRectF& toR,
+                                   const QPointF& p) const {
+    const qreal sx = fromR.width() > 0.001 ? toR.width() / fromR.width() : 1.0;
+    const qreal sy = fromR.height() > 0.001 ? toR.height() / fromR.height() : 1.0;
+    return toR.topLeft() + QPointF((p.x() - fromR.left()) * sx,
+                                   (p.y() - fromR.top()) * sy);
+}
+
+void CanvasView::paintShapeObject(QPainter& p, const ShapeObject& o) const {
+    if (o.layer < 0) return;
+    QPen pen(o.penColor, o.penWidth);
+    pen.setCapStyle(Qt::SquareCap);
+    pen.setJoinStyle(Qt::MiterJoin);
+    QPainterPath line;
+    if (o.shape == ToolId::ShapeCurve) {
+        QPointF c1, c2;
+        const bool a1 = !o.c1.isNull();
+        const bool a2 = !o.c2.isNull();
+        ShapeKit::cubicControls(o.a, o.b, o.c1, a1, o.c2, a2, c1, c2);
+        line.moveTo(o.a);
+        line.cubicTo(c1, c2, o.b);
+    } else if (o.shape == ToolId::ShapeLine) {
+        line.moveTo(o.a);
+        line.lineTo(o.b);
+    }
+    ShapeKit::draw(p, o.shape, o.rect, o.style, pen, QBrush(o.fillColor), line);
+}
+
+void CanvasView::beginSelectionResize(int handle, const QPointF& widget) {
+    m_selResizing = true;
+    m_selHandle = handle;
+    m_selOrig = m_selection;
+    m_selStartWidget = widget;
+    if (m_floatingActive && !m_floating.isNull())
+        m_selFloatOrig = m_floating;
+    update();
+}
+
+void CanvasView::updateSelectionResize(const QPointF& widget, bool mirror) {
+    if (!m_selResizing) return;
+    m_mirrorResize = mirror;
+    const QPointF d = toImage(widget) - toImage(m_selStartWidget);
+    const QRectF live = adjustResizeRect(m_selOrig, m_selHandle, d, mirror, kMinObjectDim)
+                            .intersected(QRectF(QPointF(0, 0), QSizeF(imageSize())));
+    m_selection = live.normalized();
+    if (m_floatingActive) {
+        m_floatingPos = m_selection.topLeft();
+        if (!m_selFloatOrig.isNull() && !m_selection.isEmpty())
+            m_floating = m_selFloatOrig.scaled(m_selection.size().toSize(),
+                                               Qt::IgnoreAspectRatio,
+                                               Qt::SmoothTransformation);
+    }
+    update();
+}
+
+void CanvasView::finishSelectionResize() {
+    if (!m_selResizing) return;
+    m_selResizing = false;
+    m_selHandle = -1;
+    m_selFloatOrig = QImage();
+    setSelection(m_selection);
+    update();
+}
+
+void CanvasView::beginObjectResize(int handle, const QPointF& widget) {
+    if (!m_hasObject) return;
+    m_objectOrig = m_object;
+    m_objectDragging = true;
+    m_objectHandle = handle;
+    m_objectStartWidget = widget;
+    update();
+}
+
+void CanvasView::beginObjectMove(const QPointF& widget) {
+    if (!m_hasObject) return;
+    m_objectOrig = m_object;
+    m_objectDragging = true;
+    m_objectHandle = -1;
+    m_objectStartWidget = widget;
+    update();
+}
+
+void CanvasView::updateObjectDrag(const QPointF& widget, bool mirror) {
+    if (!m_objectDragging || !m_hasObject) return;
+    m_mirrorResize = mirror;
+    const QPointF d = toImage(widget) - toImage(m_objectStartWidget);
+    const QRectF r = (m_objectHandle >= 0)
+                         ? adjustResizeRect(m_objectOrig.rect, m_objectHandle, d,
+                                            mirror, kMinObjectDim)
+                         : m_objectOrig.rect.translated(d);
+    m_object.rect = r;
+    m_object.a = mapObjectPoint(m_objectOrig.rect, r, m_objectOrig.a);
+    m_object.b = mapObjectPoint(m_objectOrig.rect, r, m_objectOrig.b);
+    m_object.c1 = mapObjectPoint(m_objectOrig.rect, r, m_objectOrig.c1);
+    m_object.c2 = mapObjectPoint(m_objectOrig.rect, r, m_objectOrig.c2);
+    update();
+}
+
+static bool rectsNearlyEqual(const QRectF& a, const QRectF& b, qreal eps) {
+    return qAbs(a.left() - b.left()) < eps && qAbs(a.top() - b.top()) < eps &&
+           qAbs(a.width() - b.width()) < eps && qAbs(a.height() - b.height()) < eps;
+}
+
+void CanvasView::finishObjectDrag() {
+    if (!m_objectDragging || !m_hasObject) return;
+    m_objectDragging = false;
+    m_objectHandle = -1;
+    if (rectsNearlyEqual(m_objectOrig.rect, m_object.rect, 0.5))
+        m_object = m_objectOrig;
     update();
 }
 
@@ -86,7 +328,7 @@ static qreal snapZoom(qreal z) {
 
     // Explicitly define your preferred zoom levels above 100%
     static const std::vector<qreal> kZoomSteps = {
-        1.0, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00
+        1.0, 1.25, 1.50, 1.75, 2.00, 2.50, 3.00, 4.00, 5.00, 6.00, 7.00, 8.00
     };
 
     // Find the closest predefined step
@@ -197,6 +439,7 @@ static QRectF normalizedClamped(const QPointF& a, const QPointF& b, const QSize&
 }
 
 void CanvasView::beginSelectionDrag(const QPointF& imgAnchor) {
+    bakeActiveObject();
     if (m_floatingActive) weldFloating();
     if (m_sessionOpen) commitEdit(tr("Draw"));
     m_makeSelection = true;
@@ -421,6 +664,7 @@ void CanvasView::setActiveLayer(int i) { m_stack->setActiveIndex(i); }
 // ------------------------------------------------------ canvas ops -------
 
 void CanvasView::cropTo(const QRectF& imageRect) {
+    bakeActiveObject();
     const QRect r = imageRect.normalized().toAlignedRect()
                         .intersected(QRect(QPoint(0, 0), imageSize()));
     if (r.width() < 1 || r.height() < 1) return;
@@ -439,6 +683,7 @@ void CanvasView::cropTo(const QRectF& imageRect) {
 }
 
 void CanvasView::setCanvasSize(const QSize& size) {
+    bakeActiveObject();
     if (size == imageSize() || size.isEmpty()) return;
     if (m_floatingActive) weldFloating();
     clearSelection();
@@ -448,6 +693,7 @@ void CanvasView::setCanvasSize(const QSize& size) {
 }
 
 void CanvasView::rotateCanvas(qreal degrees) {
+    bakeActiveObject();
     if (m_floatingActive) weldFloating();
     clearSelection();
     const QList<Layer> before = m_stack->layers();
@@ -461,7 +707,68 @@ void CanvasView::rotateCanvas(qreal degrees) {
     m_undo->push(Commands::makeLayerList(m_stack, before, tr("Rotate canvas")));
 }
 
+void CanvasView::flipCanvas(Qt::Orientation orientation) {
+    bakeActiveObject();
+    if (m_floatingActive) weldFloating();
+    clearSelection();
+    const QList<Layer> before = m_stack->layers();
+    QList<Layer> after;
+    for (int i = 0; i < m_stack->count(); ++i) {
+        Layer l = m_stack->layerAt(i);
+        l.image = Draw::flipImage(l.image, orientation);
+        after << l;
+    }
+    m_stack->replaceAll(after, m_stack->activeIndex());
+    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Flip horizontal")));
+}
+
+void CanvasView::rotateSelection(qreal degrees) {
+    bakeActiveObject();
+    if (!m_hasSelection) return;
+    if (m_floatingActive) weldFloating();
+    const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
+    if (src.isEmpty()) return;
+
+    const int layer = activeLayerIndex();
+    beginEdit(layer);
+    QImage region = Draw::rotateImage(m_stack->layerAt(layer).image.copy(src), degrees);
+    eraseRegion(layer, src);
+    const QPointF center = QRectF(src).center();
+    const QPoint topLeft((center.x() - region.width() / 2.0),
+                         (center.y() - region.height() / 2.0));
+    const QRect pasteRect(topLeft, region.size());
+    Draw::blit(m_stack->layerAt(layer).image, region, pasteRect.topLeft());
+
+    const QRect canvas(0, 0, imageSize().width(), imageSize().height());
+    markDirty(layer, src.united(pasteRect).intersected(canvas));
+    commitEdit(tr("Rotate selection"));
+
+    setSelection(QRectF(center - QPointF(region.width() / 2.0, region.height() / 2.0),
+                        QSizeF(region.size()))
+                     .normalized()
+                     .intersected(QRectF(canvas)));
+    requestRepaint();
+}
+
+void CanvasView::flipSelection(Qt::Orientation orientation) {
+    bakeActiveObject();
+    if (!m_hasSelection) return;
+    if (m_floatingActive) weldFloating();
+    const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
+    if (src.isEmpty()) return;
+
+    const int layer = activeLayerIndex();
+    beginEdit(layer);
+    QImage region = Draw::flipImage(m_stack->layerAt(layer).image.copy(src), orientation);
+    eraseRegion(layer, src);
+    Draw::blit(m_stack->layerAt(layer).image, region, src.topLeft());
+    markDirty(layer, src);
+    commitEdit(tr("Flip selection"));
+    requestRepaint();
+}
+
 void CanvasView::transformSelection(const QSize& targetSize, int rotateDegrees) {
+    bakeActiveObject();
     if (!m_hasSelection) return;
     if (m_floatingActive) weldFloating();
     const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
@@ -492,7 +799,9 @@ void CanvasView::transformSelection(const QSize& targetSize, int rotateDegrees) 
 
 void CanvasView::setTool(Tool* tool) {
     if (tool == m_tool) return;
-    if (m_tool) m_tool->onDeactivate(this);
+    if (m_tool) m_tool->onDeactivate(this);    // may commit an in-progress gesture
+    if (m_hasObject)
+        bakeActiveObject(); // letting go by switching tools
     m_tool = tool;
     if (m_tool) m_tool->onActivate(this);
     if (auto* st = dynamic_cast<ShapeTool*>(m_tool))
@@ -517,6 +826,8 @@ ShapeStyle CanvasView::currentShapeStyle() const {
 }
 
 void CanvasView::setShapeStyle(ShapeStyle style) {
+    if (m_hasObject)
+        m_object.style = style;   // restyle the pending shape too
     if (m_shapeTool)
         m_shapeTool->setStyle(style);
     else
@@ -530,43 +841,97 @@ void CanvasView::setShapeStyle(ShapeStyle style) {
 
 void CanvasView::mousePressEvent(QMouseEvent* ev) {
     setFocus();
-    if (m_boundaryResize) { finishBoundaryResize(); }
-    const int handle = (m_tool && m_tool->id() == ToolId::Select) ? handleAtWidget(ev->position()) : -1;
-    if (handle >= 0 && ev->button() == Qt::LeftButton) {
-        m_boundaryResize = true;
-        m_boundaryHandle = handle;
-        m_boundaryStartWidget = ev->position();
-        m_boundaryLiveRect = QRect(QPoint(0, 0), imageSize());
-        update();
+    if (m_boundaryResize) finishBoundaryResize();
+    if (m_selResizing) finishSelectionResize();
+    if (m_objectDragging) finishObjectDrag();
+    const bool left = ev->button() == Qt::LeftButton;
+    const bool selectTool = m_tool && m_tool->id() == ToolId::Select;
+    const bool shapeTool =
+        m_tool && dynamic_cast<ShapeTool*>(m_tool) != nullptr;
+    const QPointF img = left ? toImage(ev->position()) : QPointF();
+
+    // live object resize handles (Select or Shape after a drawn shape)
+    if (left && (selectTool || shapeTool) && m_hasObject) {
+        const int h = handleAtImageRect(m_object.rect, img);
+        if (h >= 0) {
+            beginObjectResize(h, ev->position());
+            ev->accept();
+            return;
+        }
+    }
+    // selection free-resize handles (Select tool only)
+    if (left && selectTool && m_hasSelection && !m_makeSelection && !m_hasObject) {
+        const int h = handleAtImageRect(m_selection, img);
+        if (h >= 0) {
+            beginSelectionResize(h, ev->position());
+            ev->accept();
+            return;
+        }
+    }
+    // drag a live object to move it
+    if (left && selectTool && m_hasObject && m_object.rect.contains(img)) {
+        beginObjectMove(ev->position());
+        ev->accept();
         return;
+    }
+    // canvas boundary handles (any tool)
+    if (m_showBoundaryHandles && m_tool && left) {
+        const int handle = handleAtWidget(ev->position());
+        if (handle >= 0) {
+            bakeActiveObject();
+            m_boundaryResize = true;
+            m_boundaryHandle = handle;
+            m_boundaryStartWidget = ev->position();
+            m_boundaryLiveRect = QRect(QPoint(0, 0), imageSize());
+            update();
+            ev->accept();
+            return;
+        }
     }
     if (m_tool) {
         m_tool->mousePress(this, ev);
+        ev->accept();
         return;
     }
     QWidget::mousePressEvent(ev);
 }
 
 void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
+    if (m_objectDragging) {
+        updateObjectDrag(ev->position(), ev->modifiers() & Qt::AltModifier);
+        ev->accept();
+        return;
+    }
+    if (m_selResizing) {
+        updateSelectionResize(ev->position(), ev->modifiers() & Qt::AltModifier);
+        ev->accept();
+        return;
+    }
     if (m_boundaryResize) {
         updateBoundaryResize(ev->position());
         ev->accept();
         return;
     }
-    // live boundary cursor for the select tool
-    if (m_tool && m_tool->id() == ToolId::Select) {
-        const int handle = handleAtWidget(ev->position());
-        Qt::CursorShape cur = Qt::ArrowCursor;
-        if (handle >= 0) {
-            switch (handle) {
-            case 0: case 4: cur = Qt::SizeFDiagCursor; break;
-            case 2: case 6: cur = Qt::SizeBDiagCursor; break;
-            case 1: case 5: cur = Qt::SizeVerCursor; break;
-            default: cur = Qt::SizeHorCursor;
-            }
+    // live resize/move cursor feedback
+    Qt::CursorShape cur = Qt::ArrowCursor;
+    if (m_tool && (m_tool->id() == ToolId::Select ||
+                   dynamic_cast<ShapeTool*>(m_tool) != nullptr)) {
+        const QPointF img = toImage(ev->position());
+        if (m_hasObject) {
+            const int h = handleAtImageRect(m_object.rect, img);
+            if (h >= 0) cur = resizeCursorForHandle(h);
+            else if (m_tool->id() == ToolId::Select && m_object.rect.contains(img))
+                cur = Qt::SizeAllCursor;
+        } else if (m_tool->id() == ToolId::Select && m_hasSelection && !m_makeSelection) {
+            const int h = handleAtImageRect(m_selection, img);
+            if (h >= 0) cur = resizeCursorForHandle(h);
         }
-        setCursor(cur);
     }
+    if (cur == Qt::ArrowCursor && m_showBoundaryHandles && m_tool) {
+        const int h = handleAtWidget(ev->position());
+        if (h >= 0) cur = resizeCursorForHandle(h);
+    }
+    setCursor(cur);
     if (m_tool) {
         m_tool->mouseMove(this, ev);
         ev->accept();
@@ -576,6 +941,16 @@ void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
 }
 
 void CanvasView::mouseReleaseEvent(QMouseEvent* ev) {
+    if (m_objectDragging) {
+        finishObjectDrag();
+        ev->accept();
+        return;
+    }
+    if (m_selResizing) {
+        finishSelectionResize();
+        ev->accept();
+        return;
+    }
     if (m_boundaryResize) {
         finishBoundaryResize();
         ev->accept();
@@ -606,25 +981,37 @@ void CanvasView::keyPressEvent(QKeyEvent* ev) {
 
 // ------------------------------------------------- boundary resize ------
 
-QRect CanvasView::handleWidgetRect(int index) const {
-    const QSize img = imageSize();
-    const QSizeF c(img.width() * m_zoom, img.height() * m_zoom);
-    const qreal x = m_canvasOrigin.x();
-    const qreal y = m_canvasOrigin.y();
-    const qreal hs = 7;
+QRect CanvasView::handleWidgetRectFor(const QRectF& imageRect, int index) const {
+    const QPointF tl = fromImage(imageRect.topLeft());
+    const QPointF br = fromImage(imageRect.bottomRight());
+    const QPointF ctr = (tl + br) / 2;
     QPointF center;
     switch (index) {
-    case 0: center = {x, y}; break;
-    case 1: center = {x + c.width() / 2, y}; break;
-    case 2: center = {x + c.width(), y}; break;
-    case 3: center = {x + c.width(), y + c.height() / 2}; break;
-    case 4: center = {x + c.width(), y + c.height()}; break;
-    case 5: center = {x + c.width() / 2, y + c.height()}; break;
-    case 6: center = {x, y + c.height()}; break;
-    case 7: center = {x, y + c.height() / 2}; break;
+    case 0: center = tl; break;
+    case 1: center = {ctr.x(), tl.y()}; break;
+    case 2: center = {br.x(), tl.y()}; break;
+    case 3: center = {br.x(), ctr.y()}; break;
+    case 4: center = br; break;
+    case 5: center = {ctr.x(), br.y()}; break;
+    case 6: center = {tl.x(), br.y()}; break;
+    case 7: center = {tl.x(), ctr.y()}; break;
+    default: center = tl; break;
     }
-    return QRect(QPoint(center.x() - hs, center.y() - hs),
-                 QPoint(center.x() + hs, center.y() + hs));
+    const qreal hs = 4;
+    return QRect(QPoint(qRound(center.x() - hs), qRound(center.y() - hs)),
+                 QPoint(qRound(center.x() + hs), qRound(center.y() + hs)));
+}
+
+QRect CanvasView::handleWidgetRect(int index) const {
+    return handleWidgetRectFor(QRectF(QPointF(0, 0), QSizeF(imageSize())), index);
+}
+
+int CanvasView::handleAtImageRect(const QRectF& imageRect, const QPointF& imagePt) const {
+    const QPoint w = fromImage(imagePt).toPoint();
+    for (int i = 0; i < 8; ++i)
+        if (handleWidgetRectFor(imageRect, i).adjusted(1, 1, -1, -1).contains(w))
+            return i;
+    return -1;
 }
 
 int CanvasView::handleAtWidget(const QPointF& widget) const {
@@ -726,6 +1113,9 @@ void CanvasView::drawWorkspace(QPainter& p) {
     p.drawRect(border);
 
     drawSelectionOverlay(p);
+    drawSelectionHandles(p);
+    drawObjectOverlay(p);
+    drawObjectHandles(p);
     drawBoundaryPreview(p);
     drawBoundaryHandles(p);
 }
@@ -767,8 +1157,62 @@ void CanvasView::drawSelectionOverlay(QPainter& p) {
     p.drawRect(QRectF(QPointF(x1 - hs, y1 - hs), QPointF(x1, y1)));
 }
 
-void CanvasView::drawBoundaryHandles(QPainter& p) {
+void CanvasView::drawSelectionHandles(QPainter& p) {
+    if (!m_hasSelection || m_makeSelection || m_hasObject) return;
     if (!m_tool || m_tool->id() != ToolId::Select) return;
+    for (int i = 0; i < 8; ++i) {
+        const QRect r = handleWidgetRectFor(m_selection, i);
+        const bool hover = m_selResizing && m_selHandle == i;
+        p.fillRect(r, Theme::tokens().handle);
+        p.setPen(QPen(hover ? Theme::tokens().handleHover : Theme::tokens().handleOutline, 1));
+        p.drawRect(r);
+    }
+}
+
+void CanvasView::drawObjectOverlay(QPainter& p) {
+    if (!m_hasObject) return;
+    if (m_object.layer < 0 || m_object.layer >= m_stack->count()) return;
+
+    // transient vector shape; drawn live until it is baked on let-go
+    p.save();
+    p.translate(m_canvasOrigin);
+    p.scale(m_zoom, m_zoom);
+    p.setRenderHint(QPainter::Antialiasing, true);
+    paintShapeObject(p, m_object);
+    p.restore();
+
+    // marquee around the object bounds
+    const QRectF w = fromImage(m_object.rect).adjusted(0.5, 0.5, -0.5, -0.5);
+    QPen a(Theme::tokens().selectionA, 1);
+    a.setCosmetic(true);
+    QVector<qreal> dashes{5, 4};
+    a.setDashPattern(dashes);
+    p.setBrush(Qt::NoBrush);
+    QPen b(Theme::tokens().selectionB, 1);
+    b.setCosmetic(true);
+    p.setPen(b);
+    p.drawRect(w);
+    a.setDashOffset(m_dashOffset);
+    p.setPen(a);
+    p.drawRect(w);
+}
+
+void CanvasView::drawObjectHandles(QPainter& p) {
+    if (!m_hasObject) return;
+    if (!m_tool || (m_tool->id() != ToolId::Select &&
+                    dynamic_cast<ShapeTool*>(m_tool) == nullptr))
+        return;
+    for (int i = 0; i < 8; ++i) {
+        const QRect r = handleWidgetRectFor(m_object.rect, i);
+        const bool hover = m_objectDragging && m_objectHandle == i;
+        p.fillRect(r, Theme::tokens().handle);
+        p.setPen(QPen(hover ? Theme::tokens().handleHover : Theme::tokens().handleOutline, 1));
+        p.drawRect(r);
+    }
+}
+
+void CanvasView::drawBoundaryHandles(QPainter& p) {
+    if (!m_showBoundaryHandles) return;
     const QColor outline = Theme::tokens().handleOutline;
     for (int i = 0; i < 8; ++i) {
         const QRect r = handleWidgetRect(i);

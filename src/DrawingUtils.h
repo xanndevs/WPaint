@@ -20,5 +20,6 @@ QPen selectionPen(qreal dashOffset, const QColor& a, const QColor& b);
 
 QImage resizeCanvasImage(const QImage& img, const QSize& size);
 QImage rotateImage(const QImage& img, qreal degrees);
+QImage flipImage(const QImage& img, Qt::Orientation orientation);
 
 } // namespace Draw

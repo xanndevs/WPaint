@@ -20,6 +20,21 @@ class LayerStack;
 class QUndoStack;
 class ShapeTool;
 
+// A shape kept in vector form so it can be moved/resized without raster
+// rescaling. It stays transcendental (no pixels written) until the user
+// "lets go"; then it is baked onto the layer as a single undo entry.
+struct ShapeObject {
+    int layer = -1;
+    ToolId shape = ToolId::ShapeRect;
+    ShapeStyle style = ShapeStyle::Outline;
+    qreal penWidth = 1.0;
+    QColor penColor;
+    QColor fillColor;
+    QRectF rect;            // bounding box in image coords
+    QPointF a, b;           // line/curve endpoints
+    QPointF c1, c2;         // curve bend controls
+};
+
 // Renders and edits the layered image. Coordinates: "widget coords" are
 // logical pixels of this widget; "image coords" are pixels of the document.
 // zoom() maps image -> widget.
@@ -63,6 +78,19 @@ public:
     void clearSelection();
     QRect selectionPixelRect() const;
 
+    // ---- boundary resize handles ----
+    bool boundaryHandlesEnabled() const { return m_showBoundaryHandles; }
+    void setBoundaryHandlesEnabled(bool on);
+
+    // ---- live vector shape object ----
+    bool hasActiveObject() const { return m_hasObject; }
+    void attachShapeObject(int layer, ToolId shape, ShapeStyle style, qreal penWidth,
+                           const QColor& penColor, const QColor& fillColor,
+                           const QRectF& rect, const QPointF& a, const QPointF& b,
+                           const QPointF& c1, const QPointF& c2);
+    void clearActiveObject();   // discard a transient object (Escape)
+    void bakeActiveObject();    // paint the transient object onto its layer
+
     // ---- compositing ----
     QImage composite() const;
     QImage compositeRegion(const QRectF& imageRect) const;
@@ -93,6 +121,9 @@ public:
     void cropTo(const QRectF& imageRect);
     void setCanvasSize(const QSize& size);
     void rotateCanvas(qreal degrees);
+    void flipCanvas(Qt::Orientation orientation);
+    void rotateSelection(qreal degrees);
+    void flipSelection(Qt::Orientation orientation);
     void transformSelection(const QSize& targetSize, int rotateDegrees);
 
     // ---- tools ----
@@ -145,14 +176,29 @@ private:
     void updateViewSize();
     void drawWorkspace(QPainter& p);
     void drawSelectionOverlay(QPainter& p);
+    void drawSelectionHandles(QPainter& p);
+    void drawObjectOverlay(QPainter& p);
+    void drawObjectHandles(QPainter& p);
     void drawBoundaryHandles(QPainter& p);
     void drawBoundaryPreview(QPainter& p);
     QRect handleWidgetRect(int index) const;
+    QRect handleWidgetRectFor(const QRectF& imageRect, int index) const;
     int handleAtWidget(const QPointF& widget) const;
+    int handleAtImageRect(const QRectF& imageRect, const QPointF& imagePt) const;
     void updateBoundaryResize(const QPointF& widget);
     void finishBoundaryResize();
     void applyBoundaryResize(const QRect& imageRect);
     void eraseRegion(int layer, const QRect& rect);
+    QPointF mapObjectPoint(const QRectF& fromR, const QRectF& toR,
+                           const QPointF& p) const;
+    void paintShapeObject(QPainter& p, const ShapeObject& o) const;
+    void beginSelectionResize(int handle, const QPointF& widget);
+    void updateSelectionResize(const QPointF& widget, bool mirror);
+    void finishSelectionResize();
+    void beginObjectResize(int handle, const QPointF& widget);
+    void beginObjectMove(const QPointF& widget);
+    void updateObjectDrag(const QPointF& widget, bool mirror);
+    void finishObjectDrag();
 
     // Paint session state: snapshot + dirty boxes for one undo entry.
     QHash<int, QImage> m_sessionBefore;
@@ -185,11 +231,28 @@ private:
     QRectF m_selectLive;
 
     // canvas boundary resize (live preview handled in paint)
+    bool m_showBoundaryHandles = true;
     bool m_boundaryResize = false;
     int m_boundaryHandle = -1;
     QPointF m_boundaryStartWidget;
     QRect m_boundaryLiveRect;
     int m_boundaryMin = 16;
+
+    // live vector shape object
+    bool m_hasObject = false;
+    ShapeObject m_object;
+    ShapeObject m_objectOrig;
+    bool m_objectDragging = false;
+    int m_objectHandle = -1;
+    QPointF m_objectStartWidget;
+    bool m_mirrorResize = false;
+
+    // selection free-resize
+    bool m_selResizing = false;
+    int m_selHandle = -1;
+    QRectF m_selOrig;
+    QPointF m_selStartWidget;
+    QImage m_selFloatOrig;
 
     int m_brushSize = 4;
     BrushStyle m_brushStyle = BrushStyle::Round;

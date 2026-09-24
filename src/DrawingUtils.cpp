@@ -126,4 +126,9 @@ QImage rotateImage(const QImage& img, qreal degrees) {
     return out;
 }
 
+QImage flipImage(const QImage& img, Qt::Orientation orientation) {
+    if (img.isNull()) return img;
+    return img.flipped(orientation);
+}
+
 } // namespace Draw
