@@ -92,6 +92,29 @@ void FluentSlider::mouseReleaseEvent(QMouseEvent* event) {
     QSlider::mouseReleaseEvent(event);
 }
 
+// QAbstractSlider's wheel handling steps the value but leaves the event
+// unaccepted once the value is pinned at an end, so the size slider -- which
+// floats over the canvas scroll area -- passed the gesture on and the canvas
+// started scrolling vertically. The wheel is this control's, so it is always
+// consumed; the size cannot move past its limits anyway, and passing the event
+// along to scroll the document is never what the user meant by spinning over
+// the brush size.
+void FluentSlider::wheelEvent(QWheelEvent* event) {
+    const int delta = event->angleDelta().y();
+    if (delta != 0) {
+        if (delta > 0)
+            triggerAction(QAbstractSlider::SliderSingleStepAdd);
+        else
+            triggerAction(QAbstractSlider::SliderSingleStepSub);
+    } else if (event->angleDelta().x() != 0 && orientation() == Qt::Horizontal) {
+        if (event->angleDelta().x() > 0)
+            triggerAction(QAbstractSlider::SliderSingleStepAdd);
+        else
+            triggerAction(QAbstractSlider::SliderSingleStepSub);
+    }
+    event->accept();
+}
+
 void FluentSlider::paintEvent(QPaintEvent*) {
     const auto& t = Theme::tokens();
     const bool vertical = orientation() == Qt::Vertical;

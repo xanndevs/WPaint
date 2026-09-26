@@ -6,6 +6,7 @@
 #include <QGraphicsDropShadowEffect>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 SizeSliderPanel::SizeSliderPanel(QWidget* parent) : QWidget(parent) {
     const auto& t = Theme::tokens();
@@ -50,6 +51,10 @@ SizeSliderPanel::SizeSliderPanel(QWidget* parent) : QWidget(parent) {
 }
 
 int SizeSliderPanel::size() const { return m_slider->value(); }
+
+void SizeSliderPanel::wheelEvent(QWheelEvent* event) {
+    event->accept();
+}
 
 void SizeSliderPanel::setSize(int s) {
     const QSignalBlocker b(m_slider);

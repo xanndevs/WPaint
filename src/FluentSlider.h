@@ -3,6 +3,7 @@
 #include <QSlider>
 
 class QMouseEvent;
+class QWheelEvent;
 
 // QSlider with a self-drawn Fluent-style round thumb and accent sub-page.
 // QSS cannot produce a round handle for sliders (the cross-axis size is
@@ -23,6 +24,7 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
 
 private:
     int valueForPoint(const QPointF& p) const;
