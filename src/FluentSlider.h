@@ -27,6 +27,8 @@ protected:
     void wheelEvent(QWheelEvent* event) override;
 
 private:
+    qreal haloRadius() const;
+    int travelInset() const;
     int valueForPoint(const QPointF& p) const;
 
     bool m_dragging = false;

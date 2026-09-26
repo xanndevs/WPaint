@@ -35,6 +35,11 @@ enum class ToolId {
 
 enum class BrushStyle { Round, Square, Spray, Calligraphy };
 
+// Brush size limits. The size slider only travels to kSizeSliderMax, but a
+// value typed into the panel may be larger than that, up to kMaxBrushSize.
+constexpr int kSizeSliderMax = 64;
+constexpr int kMaxBrushSize = 1000;
+
 // Shape "fill rules" mirroring MS Paint's pattern choices.
 enum class ShapeStyle { Outline, Fill, OutlineFill };
 

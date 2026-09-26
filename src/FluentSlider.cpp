@@ -23,14 +23,30 @@ QSize FluentSlider::sizeHint() const {
     return s;
 }
 
+// Radius of the hover halo. Only the cross axis caps it, so it can never
+// spill out of the thin dimension; along the track it is free to reach.
+qreal FluentSlider::haloRadius() const {
+    const int handle = Theme::tokens().sliderHandle;
+    const int cross = (orientation() == Qt::Vertical) ? width() : height();
+    return qMin(handle * 0.68, cross / 2.0 - 0.5);
+}
+
+// The track is inset along its length by the halo radius so the halo is still
+// whole when the thumb sits at either end of its travel; a half-width inset
+// left it overhanging the widget by a couple of pixels at the extremes. This
+// uses the un-capped radius on purpose: deriving it from haloRadius() would
+// make the geometry depend on the cross size, which the layout is still in the
+// middle of deciding.
+int FluentSlider::travelInset() const {
+    return qCeil(Theme::tokens().sliderHandle * 0.68) + 1;
+}
+
 QRect FluentSlider::trackRect() const {
     const int groove = Theme::tokens().sliderGroove;
-    const int handle = Theme::tokens().sliderHandle;
+    const int inset = travelInset();
     if (orientation() == Qt::Vertical)
-        return QRect((width() - groove) / 2, handle / 2, groove,
-                     height() - handle);
-    return QRect(handle / 2, (height() - groove) / 2, width() - handle,
-                 groove);
+        return QRect((width() - groove) / 2, inset, groove, height() - 2 * inset);
+    return QRect(inset, (height() - groove) / 2, width() - 2 * inset, groove);
 }
 
 QPointF FluentSlider::thumbCenter() const {
@@ -173,10 +189,9 @@ void FluentSlider::paintEvent(QPaintEvent*) {
         border = t.handleHover;
         QColor halo = accent;
         halo.setAlpha(36);
-        const int cross = vertical ? width() : height();
-        const double haloR = qMin(handle * 0.68, cross / 2.0 - 0.5);
         p.setPen(Qt::NoPen);
         p.setBrush(halo);
+        const double haloR = haloRadius();
         p.drawEllipse(c, haloR, haloR);
     }
 

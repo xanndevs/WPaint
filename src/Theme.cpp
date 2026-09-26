@@ -466,6 +466,11 @@ QDialog { background: %4; }
 }
 #SizeSliderValue {
     color: %11; font-size: %12px;
+    background: transparent; border: 1px solid transparent;
+    padding: 1px 2px; min-height: 0;
+}
+#SizeSliderValue[wpEditing="1"] {
+    color: %3; background: %9; border: 1px solid %14;
 }
 )QSS")
         .arg(t.fontFamily)      // %1

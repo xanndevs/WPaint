@@ -97,7 +97,7 @@ void CanvasView::setColors(const QColor& p, const QColor& s) {
 }
 
 void CanvasView::setBrushSize(int s) {
-    m_brushSize = qBound(1, s, 128);
+    m_brushSize = qBound(1, s, kMaxBrushSize);
     update();
 }
 
