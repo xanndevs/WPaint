@@ -8,6 +8,7 @@
 
 class QWidget;
 class QAction;
+class QAbstractButton;
 
 namespace Theme {
 
@@ -113,6 +114,11 @@ void clearIconCache();
 
 // Call after a theme change: re-tints every button tagged with wpIconName.
 void reapplyIcons(QWidget* root);
+// Re-tint one button right now. Needed when a button's checked state changes
+// at runtime rather than at theme-change time: a checked button sits on the
+// accent fill and its glyph has to switch to the on-accent colour, or the icon
+// disappears into the background.
+void refreshIcon(QAbstractButton* button);
 
 // Helpers for building Fluent-ish controls.
 void setIcon(QWidget* w, const QString& iconName, int px = 20);

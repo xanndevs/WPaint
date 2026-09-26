@@ -582,6 +582,18 @@ void reapplyIcons(QWidget* root) {
     }
 }
 
+void refreshIcon(QAbstractButton* b) {
+    if (!b) return;
+    const QString name = b->property("wpIconName").toString();
+    if (name.isEmpty()) return;
+    const int px = b->property("wpIconPx").toInt();
+    const int size = px > 0 ? px : 20;
+    if (b->isChecked() && b->isCheckable())
+        b->setIcon(tintedIcon(name, size, tokens().iconOnAccent));
+    else
+        b->setIcon(icon(name, size));
+}
+
 void setActionIcon(QAction* action, const QString& iconName, int px) {
     action->setProperty("wpIconName", iconName);
     action->setProperty("wpIconPx", px);

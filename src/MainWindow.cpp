@@ -113,15 +113,54 @@ QIcon renderedIcon(const QString& svgName, int px) {
     return ic;
 }
 
-// A split button whose gallery caret is always visible at the bottom. The
-// caret is drawn here rather than through the QSS "menu-indicator"
-// sub-control, which has no cross-axis room and clipped the chevron into a
-// 14x5 bar. Theme::icon() gives us the marker-tinted glyph for free.
+// A gallery button with two stacked targets: the body picks the tool, the
+// chevron strip at the bottom opens the menu. Qt's own MenuButtonPopup splits
+// left/right, which put the dropdown on a thin right-hand sliver and read as
+// two buttons sitting side by side; the caret is painted here as well because
+// the QSS "menu-indicator" sub-control has no cross-axis room and squashed the
+// chevron into a bar. Size is left to the caller -- the cluster gives these
+// buttons a fixed box and the painting fits inside it.
 class PopupButton : public QToolButton {
 public:
     using QToolButton::QToolButton;
 
+    // Height of the dropdown strip along the bottom edge.
+    int caretBand() const {
+        return qBound(8, height() / 3, height() / 2);
+    }
+
 protected:
+    void mousePressEvent(QMouseEvent* ev) override {
+        if (ev->button() == Qt::LeftButton && isMenuBand(ev->position().toPoint())) {
+            // Caret strip: open the gallery without touching the tool selection.
+            if (QMenu* m = menu()) {
+                m->popup(mapToGlobal(QPoint(width() / 2, height())));
+                ev->accept();
+                return;
+            }
+        }
+        if (ev->button() == Qt::LeftButton) {
+            // Tool-select zone. Toggle by hand so the button can stay checkable
+            // (Qt will not auto-open a popup for a checkable button).
+            setChecked(!isChecked());
+            emit clicked();
+            ev->accept();
+            return;
+        }
+        QToolButton::mousePressEvent(ev);
+    }
+
+    void mouseMoveEvent(QMouseEvent* ev) override {
+        // Once the press started in the body, keep treating it as a body press
+        // even if the pointer slides onto the caret.
+        if (isDown()) {
+            setChecked(isChecked());
+            ev->accept();
+            return;
+        }
+        QToolButton::mouseMoveEvent(ev);
+    }
+
     void paintEvent(QPaintEvent* e) override {
         QToolButton::paintEvent(e);
         if (!menu()) return;
@@ -132,6 +171,11 @@ protected:
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
         p.drawPixmap((width() - caret) / 2, height() - caret - 1, pm);
+    }
+
+private:
+    bool isMenuBand(const QPoint& p) const {
+        return p.y() >= height() - caretBand();
     }
 };
 
@@ -605,7 +649,8 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         m_brushButton = new PopupButton(bar);
         m_brushButton->setObjectName("MenuButtonPopup");
         m_brushButton->setProperty("wpBig", 1);
-        m_brushButton->setPopupMode(QToolButton::MenuButtonPopup);
+        m_brushButton->setCheckable(true);
+        m_brushButton->setPopupMode(QToolButton::DelayedPopup);
         m_brushButton->setToolTip(tr("Brush"));
         m_brushButton->setFixedSize(big, big);
         Theme::setIcon(m_brushButton, "brush", iconPx);
@@ -629,6 +674,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         m_shapeButton = new PopupButton(bar);
         m_shapeButton->setObjectName("MenuButtonPopup");
         m_shapeButton->setProperty("wpBig", 1);
+        m_shapeButton->setCheckable(true);
         m_shapeButton->setPopupMode(QToolButton::InstantPopup);
         m_shapeButton->setToolTip(tr("Shapes"));
         m_shapeButton->setFixedSize(big, big);
@@ -662,7 +708,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         m_shapeStyleButton->setPopupMode(QToolButton::InstantPopup);
         m_shapeStyleButton->setToolTip(tr("Shape fill pattern"));
         m_shapeStyleButton->setFixedSize(big, big);
-        Theme::setIcon(m_shapeStyleButton, "shape-outline", iconPx);
+        Theme::setIcon(m_shapeStyleButton, "shape-fill-mode-selection", iconPx);
         m_shapeStyleButton->setIconSize(QSize(iconPx, iconPx));
         QMenu* styleMenu = new QMenu(m_shapeStyleButton);
         QActionGroup* styleGrp = new QActionGroup(styleMenu);
@@ -988,11 +1034,21 @@ void MainWindow::syncToolButtons() {
     const ToolId id = m_canvas->tool() ? m_canvas->tool()->id() : ToolId::Select;
     for (auto it = m_toolButtons.constBegin(); it != m_toolButtons.constEnd(); ++it)
         it.value()->setChecked(it.key() == id);
-    if (m_shapeButton && id >= ToolId::ShapeLine)
-        m_shapeButton->setChecked(true);
-    else if (m_shapeButton)
-        m_shapeButton->setChecked(false);
+    // The brush and shape galleries are not in m_toolButtons (they are split
+    // buttons that pick a family, not a single tool), so they are synced by
+    // hand. Both go accent while their family owns the tool, so it is obvious
+    // which one is live.
+    if (m_brushButton) {
+        m_brushButton->setChecked(id == ToolId::Brush);
+        Theme::refreshIcon(m_brushButton);
+    }
+    if (m_shapeButton) {
+        m_shapeButton->setChecked(id >= ToolId::ShapeLine);
+        Theme::refreshIcon(m_shapeButton);
+    }
 }
+
+
 
 void MainWindow::applyShape(ShapeKit::Shape shape) {
     m_canvas->setShape(shape);
