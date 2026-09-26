@@ -80,9 +80,9 @@ struct Tokens {
     // Gallery buttons that open a menu from a chevron strip: the strip's
     // height, the bottom padding that keeps the glyph clear of it, and the
     // caret size itself.
-    int caretBand = 12;
+    int caretBand = 15;
     int caretPad = 10;
-    int caretGlyph = 10;
+    int caretGlyph = 12;
 
     // Type
     QString fontFamily;

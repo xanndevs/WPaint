@@ -45,6 +45,7 @@
 #include <QTimer>
 #include <QToolBar>
 #include <QStyle>
+#include <QStyleOptionToolButton>
 #include <QToolButton>
 #include <QUndoStack>
 #include <QVBoxLayout>
@@ -201,6 +202,7 @@ protected:
 
     void enterEvent(QEnterEvent* ev) override {
         m_inWidget = true;
+        m_hoverMenu = isMenuBand(ev->position().toPoint());
         QToolButton::enterEvent(ev);
         update();
     }
@@ -231,10 +233,16 @@ protected:
             p.setBrush(t.controlHover);
             const QRectF body(0, 0, width(), height() - band);
             const QRectF caret(0, height() - band, width(), band);
-            if (m_hoverMenu)
-                fillZone(p, caret, /*roundTop=*/false, t.radiusMd);
-            else
-                fillZone(p, body, /*roundTop=*/true, t.radiusMd);
+            if (m_hoverMenu) {
+                fillZone(p, caret, /*roundTop=*/false, t.radiusSm);
+            } else {
+                fillZone(p, body, /*roundTop=*/true, t.radiusSm);
+                // The base already drew the glyph and this fill is opaque, so
+                // the tool would disappear under it. Put it back, using the
+                // geometry the style already worked out rather than guessing
+                // where padding put it.
+                repaintIcon(p);
+            }
         }
 
         const int glyph = t.caretGlyph;
@@ -249,6 +257,19 @@ protected:
         if (pm.isNull()) return;
         const int cy = band ? height() - band / 2 : height() - glyph - 1;
         p.drawPixmap((width() - glyph) / 2, cy - glyph / 2, pm);
+    }
+
+    void repaintIcon(QPainter& p) {
+        if (icon().isNull() || iconSize().isEmpty()) return;
+        QStyleOptionToolButton opt;
+        opt.initFrom(this);
+        opt.icon = icon();
+        opt.iconSize = iconSize();
+        opt.toolButtonStyle = Qt::ToolButtonIconOnly;
+        const QRect r = style()->subElementRect(QStyle::SE_ToolButtonLayoutItem, &opt,
+                                                this);
+        if (!r.isValid() || r.isEmpty()) return;
+        p.drawPixmap(r, icon().pixmap(r.size()));
     }
 
 private:
