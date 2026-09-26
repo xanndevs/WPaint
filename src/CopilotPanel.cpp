@@ -14,7 +14,7 @@ CopilotPanel::CopilotPanel(QWidget* parent) : QWidget(parent) {
     setMinimumWidth(Theme::tokens().panelW);
 
     auto* headerIcon = new QLabel(this);
-    headerIcon->setPixmap(Theme::icon("copilot", 26).pixmap(26, 26));
+    headerIcon->setPixmap(Theme::icon("copilot", 26).pixmap(QSize(26, 26), 2.0));
 
     auto* headerText = new QLabel(tr("Draw with Copilot"), this);
     headerText->setObjectName("CopilotTitle");

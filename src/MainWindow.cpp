@@ -44,6 +44,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QToolBar>
+#include <QStyle>
 #include <QToolButton>
 #include <QUndoStack>
 #include <QVBoxLayout>
@@ -114,34 +115,56 @@ QIcon renderedIcon(const QString& svgName, int px) {
     return ic;
 }
 
-// A gallery button drawn as two stacked pieces inside one box: the body picks
-// the tool, the chevron strip along the bottom opens the menu. Qt's own
+// Draws `zone` with only its outer corners rounded, so it reads as one button
+// divided into zones rather than a smaller button sitting on a bigger one.
+static void fillZone(QPainter& p, const QRectF& zone, bool roundTop, qreal radius) {
+    p.drawRoundedRect(zone, radius, radius);
+    // Square off the two corners that meet the neighbouring zone.
+    const QRectF flat = roundTop ? QRectF(zone.left(), zone.center().y(),
+                                          zone.width(), zone.height() / 2.0)
+                                 : QRectF(zone.left(), zone.top(),
+                                          zone.width(), zone.height() / 2.0);
+    p.drawRect(flat);
+}
+
+// A gallery button, optionally split into two stacked zones: the body picks the
+// tool, the chevron strip along the bottom opens the menu. Qt's own
 // MenuButtonPopup splits left/right, which put the dropdown on a thin right-hand
-// sliver and read as two unrelated buttons side by side. The outer size is
-// fixed by the cluster and does not change -- only how the box divides.
+// sliver. The outer box is fixed by the cluster and never changes -- only how
+// the box divides.
 //
-// The accent fill covers the whole button when the tool is active; hover
-// highlights just the piece under the pointer, so the two targets stay
-// distinguishable without the fill ever looking partial.
+// With splitting off (a button whose whole surface is just "open this menu")
+// the caret is still drawn, but there is no zone hit-testing and no hover
+// division, because there is nothing to choose between.
 class PopupButton : public QToolButton {
 public:
-    using QToolButton::QToolButton;
-
-    PopupButton() {
+    explicit PopupButton(QWidget* parent = nullptr) : QToolButton(parent) {
         setContextMenuPolicy(Qt::NoContextMenu);
+        setSplitEnabled(true);
         // The checked state drives both the fill and the icon colour, and it
         // flips at runtime, so the icon has to be re-tinted here rather than
         // only at theme-change time.
         connect(this, &QToolButton::toggled, this, [this] { Theme::refreshIcon(this); });
     }
 
-    // Height of the dropdown strip along the bottom edge.
-    int caretBand() const {
-        return qBound(8, height() / 3, height() / 2);
+    // False makes the entire surface open the menu (InstantPopup), with no
+    // separate tool-select zone.
+    void setSplitEnabled(bool on) {
+        m_split = on;
+        setProperty("wpSplit", on ? 1 : 0);
+        style()->unpolish(this);
+        style()->polish(this);
+        update();
     }
+
+    int caretBand() const { return Theme::tokens().caretBand; }
 
 protected:
     void mousePressEvent(QMouseEvent* ev) override {
+        if (!m_split) { // whole button is the menu
+            QToolButton::mousePressEvent(ev);
+            return;
+        }
         if (ev->button() == Qt::LeftButton && isMenuBand(ev->position().toPoint())) {
             if (QMenu* m = menu()) {
                 m->popup(mapToGlobal(QPoint(width() / 2, height())));
@@ -165,19 +188,25 @@ protected:
             ev->accept();
             return;
         }
-        // Remember which piece the pointer is over so the hover can light only
-        // that one.
-        const bool inMenu = isMenuBand(ev->position().toPoint());
-        if (inMenu != m_hoverMenu) {
-            m_hoverMenu = inMenu;
-            setCursor(inMenu ? Qt::PointingHandCursor
-                             : (menu() ? Qt::PointingHandCursor : Qt::ArrowCursor));
-            update();
+        if (m_split) {
+            // Remember which zone the pointer is over so only that one lights up.
+            const bool inMenu = isMenuBand(ev->position().toPoint());
+            if (inMenu != m_hoverMenu) {
+                m_hoverMenu = inMenu;
+                update();
+            }
         }
         QToolButton::mouseMoveEvent(ev);
     }
 
+    void enterEvent(QEnterEvent* ev) override {
+        m_inWidget = true;
+        QToolButton::enterEvent(ev);
+        update();
+    }
+
     void leaveEvent(QEvent* ev) override {
+        m_inWidget = false;
         m_hoverMenu = false;
         QToolButton::leaveEvent(ev);
         update();
@@ -185,44 +214,49 @@ protected:
 
     void paintEvent(QPaintEvent* e) override {
         QToolButton::paintEvent(e);
+        if (!menu()) return;
         const auto& t = Theme::tokens();
-        const int band = caretBand();
+        const int band = m_split ? caretBand() : 0;
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        // Hover lights only the piece under the pointer. When the tool is active
-        // the whole button is already accent, so the highlight is a lighter
-        // accent rather than the neutral hover fill.
-        if (m_hoverMenu) {
+        // Hover lights exactly one zone. The generic :hover is suppressed for
+        // split buttons in the stylesheet, otherwise the whole button would
+        // light up and the split would be invisible. An active button is
+        // already unambiguously blue across its full surface, so it gets no
+        // zone highlight -- tinting a piece of it would undo that and bring
+        // back the two-buttons-inside-one look.
+        if (m_split && m_inWidget && !isChecked()) {
             p.setPen(Qt::NoPen);
-            p.setBrush(isChecked() ? t.accentHover : t.controlHover);
-            p.drawRoundedRect(QRectF(0, height() - band, width(), band), 4, 4);
-        } else if (hovered() && menu()) {
-            p.setPen(Qt::NoPen);
-            p.setBrush(isChecked() ? t.accentHover : t.controlHover);
-            p.drawRoundedRect(QRectF(0, 0, width(), height() - band), 4, 4);
+            p.setBrush(t.controlHover);
+            const QRectF body(0, 0, width(), height() - band);
+            const QRectF caret(0, height() - band, width(), band);
+            if (m_hoverMenu)
+                fillZone(p, caret, /*roundTop=*/false, t.radiusMd);
+            else
+                fillZone(p, body, /*roundTop=*/true, t.radiusMd);
         }
 
-        // Hairline between the pieces, so the division is visible at rest too.
-        if (menu()) {
-            p.setPen(QPen(isChecked() ? t.accentHover : t.divider, 1));
-            p.drawLine(QPoint(4, height() - band), QPoint(width() - 4, height() - band));
-        }
-
-        if (!menu()) return;
-        const int caret = 12;
-        const QPixmap pm = Theme::icon("chevron-down", caret, isChecked() ? t.iconOnAccent
-                                                                        : t.icon)
-                               .pixmap(caret, caret, QIcon::Normal, QIcon::Off);
+        const int glyph = t.caretGlyph;
+        // Theme::icon renders at 2x and hands back a pixmap whose devicePixelRatio
+        // is already 2. Asking for .pixmap(glyph, glyph) would then downscale that
+        // and a 10px caret comes back as a faint smear with no solid pixel in it,
+        // so ask at the native ratio instead and let the painter scale it down.
+        const qreal dpr = qMax<qreal>(2.0, devicePixelRatioF());
+        const QPixmap pm = Theme::icon("chevron-down", glyph,
+                                       isChecked() ? t.iconOnAccent : t.icon)
+                               .pixmap(QSize(glyph, glyph), dpr);
         if (pm.isNull()) return;
-        p.drawPixmap((width() - caret) / 2, height() - caret - 1, pm);
+        const int cy = band ? height() - band / 2 : height() - glyph - 1;
+        p.drawPixmap((width() - glyph) / 2, cy - glyph / 2, pm);
     }
 
 private:
     bool isMenuBand(const QPoint& p) const {
         return p.y() >= height() - caretBand();
     }
-    bool hovered() const { return underMouse(); }
+    bool m_split = true;
+    bool m_inWidget = false;
     bool m_hoverMenu = false;
 };
 
@@ -761,11 +795,16 @@ auto* selBtn = toolButtonFor(ToolId::Select);
             }
         m_shapeButton->setMenu(shapeMenu);
 
-        m_shapeStyleButton = new PopupButton(bar);
-        m_shapeStyleButton->setObjectName("MenuButtonPopup");
-        m_shapeStyleButton->setProperty("wpBig", 1);
-        m_shapeStyleButton->setPopupMode(QToolButton::InstantPopup);
-        m_shapeStyleButton->setToolTip(tr("Shape fill pattern"));
+        auto* styleBtn = new PopupButton(bar);
+        styleBtn->setObjectName("MenuButtonPopup");
+        styleBtn->setProperty("wpBig", 1);
+        // No secondary function, so no split: the whole surface is one target
+        // and opening the menu is all it does. The caret still shows there is
+        // more to open.
+        styleBtn->setSplitEnabled(false);
+        styleBtn->setPopupMode(QToolButton::InstantPopup);
+        styleBtn->setToolTip(tr("Shape fill pattern"));
+        m_shapeStyleButton = styleBtn;
         m_shapeStyleButton->setFixedSize(big, big);
         Theme::setIcon(m_shapeStyleButton, "shape-fill-mode-selection", iconPx);
         m_shapeStyleButton->setIconSize(QSize(iconPx, iconPx));
