@@ -116,7 +116,9 @@ public:
     // ---- floating selection / clipboard machinery ----
     void liftSelection();                       // cut region to floating
     void pasteFloating(const QImage& img, const QPointF& topLeft);
-    void weldFloating();                        // bake floating into active layer
+    // Bake the floating selection into the active layer. `text` overrides the
+    // undo label for callers that are not moving it (a resize, say).
+    void weldFloating(const QString& text = QString());
     void cancelFloating();
     void commitFloatingRemoval(const QString& text); // discard floating pixels
     bool floatingActive() const { return m_floatingActive; }
@@ -269,6 +271,9 @@ private:
 
     // selection free-resize
     bool m_selResizing = false;
+    // This resize lifted the region, so finishing it has to bake the scaled
+    // content rather than leave it floating.
+    bool m_resizeCaptured = false;
     int m_selHandle = -1;
     QRectF m_selOrig;
     QPointF m_selStartWidget;

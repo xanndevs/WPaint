@@ -216,8 +216,20 @@ void CanvasView::beginSelectionResize(int handle, const QPointF& widget) {
     m_selHandle = handle;
     m_selOrig = m_selection;
     m_selStartWidget = widget;
-    if (m_floatingActive && !m_floating.isNull())
+    m_resizeCaptured = false;
+    if (m_floatingActive && !m_floating.isNull()) {
         m_selFloatOrig = m_floating;
+    } else if (!m_spaceDown) {
+        // Resizing a freshly made selection should scale what it covers. The
+        // box alone has nothing to scale, so the region is lifted first and
+        // the drag scales the captured pixels. Holding Space keeps the old
+        // box-only resize, for when you just want to move the marquee.
+        liftSelection();
+        if (!m_floating.isNull()) {
+            m_selFloatOrig = m_floating;
+            m_resizeCaptured = true;
+        }
+    }
     update();
 }
 
@@ -244,6 +256,13 @@ void CanvasView::finishSelectionResize() {
     m_selHandle = -1;
     m_selFloatOrig = QImage();
     setSelection(m_selection);
+    if (m_resizeCaptured) {
+        // The drag scaled the captured pixels, so bake them down and label the
+        // entry for what it was. Welding under the default label would file a
+        // resize under "Move selection" in the undo history.
+        m_resizeCaptured = false;
+        weldFloating(tr("Resize selection"));
+    }
     update();
 }
 
@@ -548,7 +567,7 @@ void CanvasView::pasteFloating(const QImage& img, const QPointF& topLeft) {
     update();
 }
 
-void CanvasView::weldFloating() {
+void CanvasView::weldFloating(const QString& text) {
     if (!m_floatingActive) return;
     const int layer = activeLayerIndex();
     const QPoint pos = m_floatingPos.toPoint();
@@ -556,7 +575,7 @@ void CanvasView::weldFloating() {
     markDirty(layer, QRect(pos, m_floating.size()));
     m_floatingActive = false;
     m_floating = QImage();
-    commitEdit(tr("Move selection"));
+    commitEdit(text.isEmpty() ? tr("Move selection") : text);
     update();
 }
 
@@ -1075,6 +1094,14 @@ static bool arrowDelta(QKeyEvent* ev, QPoint& out) {
 
 void CanvasView::keyPressEvent(QKeyEvent* ev) {
     if (m_tool) {
+        // A KeyPress arrives already accepted, so "still accepted after the
+        // tool ran" does not mean the tool wanted it. A tool claims a key only
+        // by accepting it from a non-accepted state, so start from ignored and
+        // let an explicit accept() count as intent. Without this every tool
+        // that does not handle a given key silently ate it -- which is why
+        // Space, and with it arrow-nudge and Space+arrows sketching, did
+        // nothing while the Select tool was active.
+        ev->ignore();
         m_tool->keyPress(this, ev);
         if (ev->isAccepted()) return;
     }
