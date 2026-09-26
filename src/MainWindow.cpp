@@ -146,6 +146,10 @@ ColorWellButton::ColorWellButton(QWidget* parent)
     setObjectName("ColorWell");
     setFixedSize(40, 40);
     setToolTip(ColorWellButton::tr("Left-click: Primary color, right-click: Secondary color"));
+    // Right-click picks colour 2 in mousePressEvent; without this the context
+    // menu event is left unconsumed and reaches QMainWindow, popping the stock
+    // widget menu over the top of it.
+    setContextMenuPolicy(Qt::NoContextMenu);
 }
 
 void ColorWellButton::setColors(const QColor& p, const QColor& s) {
@@ -184,6 +188,11 @@ PaletteButton::PaletteButton(const QColor& col, int size, QWidget* parent)
     setMouseTracking(true);
     setFocusPolicy(Qt::NoFocus);
     setCursor(Qt::PointingHandCursor);
+    // The right button is handled in mousePressEvent, which picks colour 2.
+    // Leaving the default policy made Qt *also* raise a context-menu event
+    // that nothing consumed, so it walked up to QMainWindow and popped the
+    // stock widget menu ("Layers", "App toolbar") on top of the colour pick.
+    setContextMenuPolicy(Qt::NoContextMenu);
 }
 
 void PaletteButton::paintEvent(QPaintEvent*) {
