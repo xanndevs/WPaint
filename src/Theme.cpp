@@ -568,6 +568,27 @@ void reapplyIcons(QWidget* root) {
                 b->setIcon(icon(iconName, size));
         }
     }
+    // Menu items are QActions, so they never show up in the widget walk above.
+    const auto actions = root->findChildren<QAction*>();
+    for (QAction* a : actions) {
+        const QString iconName = a->property("wpIconName").toString();
+        if (iconName.isEmpty()) continue;
+        const int px = a->property("wpIconPx").toInt();
+        const int size = px > 0 ? px : 18;
+        if (a->isChecked())
+            a->setIcon(tintedIcon(iconName, size, tokens().iconOnAccent));
+        else
+            a->setIcon(icon(iconName, size));
+    }
+}
+
+void setActionIcon(QAction* action, const QString& iconName, int px) {
+    action->setProperty("wpIconName", iconName);
+    action->setProperty("wpIconPx", px);
+    if (action->isChecked())
+        action->setIcon(tintedIcon(iconName, px, tokens().iconOnAccent));
+    else
+        action->setIcon(icon(iconName, px));
 }
 
 void setIcon(QWidget* w, const QString& iconName, int px) {

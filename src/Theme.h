@@ -7,6 +7,7 @@
 #include <functional>
 
 class QWidget;
+class QAction;
 
 namespace Theme {
 
@@ -115,5 +116,8 @@ void reapplyIcons(QWidget* root);
 
 // Helpers for building Fluent-ish controls.
 void setIcon(QWidget* w, const QString& iconName, int px = 20);
+// Same, for a QAction -- menu items are not widgets, so they are tagged and
+// re-tinted separately. A checked action uses the on-accent colour.
+void setActionIcon(QAction* action, const QString& iconName, int px = 18);
 
 } // namespace Theme

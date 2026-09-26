@@ -308,34 +308,42 @@ void MainWindow::buildActions() {
     // File
     QAction* newAct = new QAction(tr("New"), this);
     overrideShortcut(newAct, QKeySequence::New);
+    Theme::setActionIcon(newAct, "new");
     connect(newAct, &QAction::triggered, this, &MainWindow::newDocument);
 
     QAction* openAct = new QAction(tr("Open..."), this);
     overrideShortcut(openAct, QKeySequence::Open);
+    Theme::setActionIcon(openAct, "open");
     connect(openAct, &QAction::triggered, this, &MainWindow::openDocument);
 
     QAction* saveAct = new QAction(tr("Save"), this);
     overrideShortcut(saveAct, QKeySequence::Save);
+    Theme::setActionIcon(saveAct, "save");
     connect(saveAct, &QAction::triggered, this, &MainWindow::saveDocument);
 
     QAction* saveAsAct = new QAction(tr("Save As..."), this);
     overrideShortcut(saveAsAct, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+    Theme::setActionIcon(saveAsAct, "save");
     connect(saveAsAct, &QAction::triggered, this, &MainWindow::saveDocumentAs);
 
     QAction* exitAct = new QAction(tr("Exit"), this);
     exitAct->setMenuRole(QAction::QuitRole);
     overrideShortcut(exitAct, QKeySequence::Quit);
+    Theme::setActionIcon(exitAct, "close");
     connect(exitAct, &QAction::triggered, this, &MainWindow::close);
 
     // Edit
     m_undoAction = new QAction(tr("Undo"), this);
     overrideShortcut(m_undoAction, QKeySequence::Undo);
     connect(m_undoAction, &QAction::triggered, this, &MainWindow::doUndo);
+    Theme::setActionIcon(m_undoAction, "undo");
     m_redoAction = new QAction(tr("Redo"), this);
     overrideShortcut(m_redoAction, QKeySequence::Redo);
+    Theme::setActionIcon(m_redoAction, "redo");
     connect(m_redoAction, &QAction::triggered, this, &MainWindow::doRedo);
     QAction* redoAlt = new QAction(tr("Redo (alt)"), this);
     overrideShortcut(redoAlt, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_Z));
+    Theme::setActionIcon(redoAlt, "redo");
     connect(redoAlt, &QAction::triggered, this, &MainWindow::doRedo);
     connect(m_undo, &QUndoStack::canUndoChanged, m_undoAction, &QAction::setEnabled);
     connect(m_undo, &QUndoStack::canRedoChanged, m_redoAction, &QAction::setEnabled);
@@ -344,48 +352,59 @@ void MainWindow::buildActions() {
 
     m_cutAction = new QAction(tr("Cut"), this);
     overrideShortcut(m_cutAction, QKeySequence::Cut);
+    Theme::setActionIcon(m_cutAction, "cut");
     connect(m_cutAction, &QAction::triggered, this, &MainWindow::doCut);
 
     m_copyAction = new QAction(tr("Copy"), this);
     overrideShortcut(m_copyAction, QKeySequence::Copy);
+    Theme::setActionIcon(m_copyAction, "copy");
     connect(m_copyAction, &QAction::triggered, this, &MainWindow::doCopy);
 
     m_pasteAction = new QAction(tr("Paste"), this);
     overrideShortcut(m_pasteAction, QKeySequence::Paste);
+    Theme::setActionIcon(m_pasteAction, "paste");
     connect(m_pasteAction, &QAction::triggered, this, &MainWindow::doPaste);
 
     m_selectAllAction = new QAction(tr("Select All"), this);
     overrideShortcut(m_selectAllAction, QKeySequence::SelectAll);
+    Theme::setActionIcon(m_selectAllAction, "select");
     connect(m_selectAllAction, &QAction::triggered, this, &MainWindow::doSelectAll);
 
     m_deleteAction = new QAction(tr("Delete"), this);
     overrideShortcut(m_deleteAction, QKeySequence::Delete);
+    Theme::setActionIcon(m_deleteAction, "delete");
     connect(m_deleteAction, &QAction::triggered, this, &MainWindow::doDelete);
 
     QAction* resizeAct = new QAction(tr("Resize and Rotate..."), this);
     overrideShortcut(resizeAct, QKeySequence(Qt::CTRL | Qt::Key_E));
+    Theme::setActionIcon(resizeAct, "resize");
     connect(resizeAct, &QAction::triggered, this, [this] { openResizeDialog(); });
 
     // View
     QAction* zoomIn = new QAction(tr("Zoom In"), this);
     overrideShortcut(zoomIn, QKeySequence::ZoomIn);
+    Theme::setActionIcon(zoomIn, "zoom-in");
     connect(zoomIn, &QAction::triggered, m_canvas, &CanvasView::zoomIn);
 
     QAction* zoomOut = new QAction(tr("Zoom Out"), this);
     overrideShortcut(zoomOut, QKeySequence::ZoomOut);
+    Theme::setActionIcon(zoomOut, "zoom-out");
     connect(zoomOut, &QAction::triggered, m_canvas, &CanvasView::zoomOut);
 
     QAction* zoomActual = new QAction(tr("Actual Size"), this);
     overrideShortcut(zoomActual, QKeySequence("Ctrl+0"));
+    Theme::setActionIcon(zoomActual, "zoom-actual");
     connect(zoomActual, &QAction::triggered, m_canvas, &CanvasView::zoomActual);
 
     QAction* zoomFit = new QAction(tr("Fit to Window"), this);
     overrideShortcut(zoomFit, QKeySequence("Ctrl+9"));
+    Theme::setActionIcon(zoomFit, "zoom-fit");
     connect(zoomFit, &QAction::triggered, m_canvas, &CanvasView::zoomFit);
 
     QAction* boundaryHandles = new QAction(tr("Show Canvas Resize Handles"), this);
     boundaryHandles->setCheckable(true);
     boundaryHandles->setChecked(m_canvas->boundaryHandlesEnabled());
+    Theme::setActionIcon(boundaryHandles, "canvas-handles");
     connect(boundaryHandles, &QAction::toggled, m_canvas,
             &CanvasView::setBoundaryHandlesEnabled);
 
@@ -420,7 +439,8 @@ void MainWindow::buildActions() {
     viewMenu->addAction(boundaryHandles);
     viewMenu->addSeparator();
 
-    QMenu* themeMenu = viewMenu->addMenu(tr("Theme Preference"));
+    QMenu* themeMenu = viewMenu->addMenu(Theme::icon("theme", 18), tr("Theme Preference"));
+    Theme::setActionIcon(themeMenu->menuAction(), "theme");
     QActionGroup* themeGroup = new QActionGroup(this);
     themeGroup->setExclusive(true);
     auto* sysThemeAct = themeMenu->addAction(tr("Use System Theme"));
@@ -1267,17 +1287,30 @@ void MainWindow::showSelectionContextMenu() {
     menu.addAction(m_copyAction);
     menu.addAction(m_pasteAction);
     menu.addSeparator();
-    menu.addAction(tr("Flip horizontal"), this,
-                   [this] { m_canvas->flipSelection(Qt::Horizontal); });
-    menu.addAction(tr("Flip vertical"), this,
-                   [this] { m_canvas->flipSelection(Qt::Vertical); });
+
+    const auto addIconItem = [this, &menu](const QString& text, const char* iconName,
+                                            Qt::Orientation orient) {
+        QAction* a = menu.addAction(Theme::icon(QLatin1String(iconName), 18), text);
+        Theme::setActionIcon(a, QLatin1String(iconName), 18);
+        connect(a, &QAction::triggered, this, [this, orient] {
+            m_canvas->flipSelection(orient);
+        });
+    };
+    const auto addRotateItem = [this, &menu](const QString& text, const char* iconName,
+                                              qreal degrees) {
+        QAction* a = menu.addAction(Theme::icon(QLatin1String(iconName), 18), text);
+        Theme::setActionIcon(a, QLatin1String(iconName), 18);
+        connect(a, &QAction::triggered, this, [this, degrees] {
+            m_canvas->rotateSelection(degrees);
+        });
+    };
+
+    addIconItem(tr("Flip horizontal"), "flip-horizontal", Qt::Horizontal);
+    addIconItem(tr("Flip vertical"), "flip-vertical", Qt::Vertical);
     menu.addSeparator();
-    menu.addAction(tr("Rotate 90° clockwise"), this,
-                   [this] { m_canvas->rotateSelection(90); });
-    menu.addAction(tr("Rotate 90° counter-clockwise"), this,
-                   [this] { m_canvas->rotateSelection(-90); });
-    menu.addAction(tr("Rotate 180°"), this,
-                   [this] { m_canvas->rotateSelection(180); });
+    addRotateItem(tr("Rotate 90° clockwise"), "rotate-right", 90);
+    addRotateItem(tr("Rotate 90° counter-clockwise"), "rotate-left", -90);
+    addRotateItem(tr("Rotate 180°"), "rotate-180", 180);
     menu.addSeparator();
     menu.addAction(m_deleteAction);
     menu.exec(QCursor::pos());
