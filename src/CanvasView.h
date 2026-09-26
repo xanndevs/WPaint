@@ -185,6 +185,7 @@ protected:
 
 private:
     void updateViewSize();
+    void applyZoom(qreal z, bool snap);
     bool handleArrowKey(QKeyEvent* ev);
     bool nudgeBy(const QPoint& delta);
     void sketchTo(const QPointF& imagePt);

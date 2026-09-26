@@ -344,8 +344,11 @@ static qreal snapZoom(qreal z) {
     return (z - lower < higher - z) ? lower : higher;
 }
 
-void CanvasView::setZoom(qreal z) {
-    z = snapZoom(z);
+void CanvasView::setZoom(qreal z) { applyZoom(z, true); }
+
+void CanvasView::applyZoom(qreal z, bool snap) {
+    if (snap) z = snapZoom(z);
+    else z = qBound(kMinZoom, z, kMaxZoom);
     if (qFuzzyCompare(z, m_zoom)) return;
     m_autoFit = false;
     m_zoom = z;
@@ -370,7 +373,11 @@ void CanvasView::zoomAt(const QPoint& widgetAnchor, qreal factor) {
     const int oldH = hbar->value();
     const int oldV = vbar->value();
 
-    setZoom(m_zoom * factor);
+    // Continuous, not snapped to the 25% ladder. Snapping breaks two things: a
+    // high-resolution wheel or trackpad sends small deltas whose factor gets
+    // snapped straight back to the current step, so the zoom can never escape
+    // it, and every notch that does land is a lurch.
+    applyZoom(m_zoom * factor, false);
 
     // setZoom() resized the widget and re-centred the origin, so the anchor
     // now sits at a different widget position. Pin it back to the same viewport
@@ -439,12 +446,14 @@ void CanvasView::resizeEvent(QResizeEvent* ev) {
 
 void CanvasView::wheelEvent(QWheelEvent* ev) {
     if (ev->modifiers() & Qt::ControlModifier) {
-        const int notches = ev->angleDelta().y();
-        if (notches == 0) { ev->accept(); return; }
-        // Smooth-ish per-notch response so a trackpad's many small deltas and a
-        // mouse wheel's coarse ones both feel continuous, then pin the point
-        // under the cursor.
-        const qreal steps = qBound(-4.0, qreal(notches) / 120.0, 4.0);
+        // A mouse wheel reports angleDelta; a trackpad pinch reports pixelDelta
+        // with angleDelta zero, and used to be dropped entirely.
+        int delta = ev->angleDelta().y();
+        if (delta == 0) delta = ev->pixelDelta().y();
+        if (delta == 0) { ev->accept(); return; }
+        // Scale by the delta rather than treating every event as one notch, so
+        // many small trackpad deltas and one coarse wheel notch feel the same.
+        const qreal steps = qBound(-8.0, qreal(delta) / 120.0, 8.0);
         zoomAt(ev->position().toPoint(), std::pow(1.2, steps));
         ev->accept();
     } else {
