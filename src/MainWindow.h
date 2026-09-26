@@ -131,6 +131,7 @@ private:
     void doPaste();
     void doSelectAll();
     void doDelete();
+    void showSelectionContextMenu();
     void updateEditActions();
 
     // layers

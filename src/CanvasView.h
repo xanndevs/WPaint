@@ -16,6 +16,7 @@ class QKeyEvent;
 class QMouseEvent;
 class QWheelEvent;
 class QPaintEvent;
+class QContextMenuEvent;
 class LayerStack;
 class QUndoStack;
 class ShapeTool;
@@ -161,6 +162,9 @@ signals:
     void boundaryResizePreview(const QRect& imageRect);
     void zoomChanged(qreal zoom);
     void colorPicked(const QColor& color, bool primary);
+    // Right-click inside a selection. MainWindow owns the clipboard and the
+    // transform entry points, so the menu is assembled there.
+    void selectionContextRequested();
 
 protected:
     void paintEvent(QPaintEvent* ev) override;
@@ -171,6 +175,7 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent* ev) override;
     void keyPressEvent(QKeyEvent* ev) override;
     void keyReleaseEvent(QKeyEvent* ev) override;
+    void contextMenuEvent(QContextMenuEvent* ev) override;
     void wheelEvent(QWheelEvent* ev) override;
 
 private:

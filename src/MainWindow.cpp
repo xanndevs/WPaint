@@ -28,6 +28,7 @@
 #include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
+#include <QCursor>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -246,6 +247,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(m_canvas, &CanvasView::zoomChanged, this, &MainWindow::onZoomChanged);
     connect(m_canvas, &CanvasView::selectionChanged, this,
             &MainWindow::updateEditActions);
+    connect(m_canvas, &CanvasView::selectionContextRequested, this,
+            &MainWindow::showSelectionContextMenu);
     connect(m_stack, &LayerStack::changed, this, &MainWindow::syncStatusSize);
     connect(m_undo, &QUndoStack::cleanChanged, this,
             [this](bool clean) {
@@ -1229,6 +1232,29 @@ void MainWindow::doDelete() {
     else if (m_canvas->hasSelection())
         m_canvas->clearSelectionRegion(tr("Clear selection"));
     updateEditActions();
+}
+
+void MainWindow::showSelectionContextMenu() {
+    if (!m_canvas->hasSelection()) return;
+    QMenu menu(this);
+    menu.addAction(m_cutAction);
+    menu.addAction(m_copyAction);
+    menu.addAction(m_pasteAction);
+    menu.addSeparator();
+    menu.addAction(tr("Flip horizontal"), this,
+                   [this] { m_canvas->flipSelection(Qt::Horizontal); });
+    menu.addAction(tr("Flip vertical"), this,
+                   [this] { m_canvas->flipSelection(Qt::Vertical); });
+    menu.addSeparator();
+    menu.addAction(tr("Rotate 90° clockwise"), this,
+                   [this] { m_canvas->rotateSelection(90); });
+    menu.addAction(tr("Rotate 90° counter-clockwise"), this,
+                   [this] { m_canvas->rotateSelection(-90); });
+    menu.addAction(tr("Rotate 180°"), this,
+                   [this] { m_canvas->rotateSelection(180); });
+    menu.addSeparator();
+    menu.addAction(m_deleteAction);
+    menu.exec(QCursor::pos());
 }
 
 // ------------------------------------------------------- layer helpers ----

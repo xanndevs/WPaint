@@ -1123,6 +1123,17 @@ void CanvasView::keyReleaseEvent(QKeyEvent* ev) {
     QWidget::keyReleaseEvent(ev);
 }
 
+void CanvasView::contextMenuEvent(QContextMenuEvent* ev) {
+    // Only inside a selection, matching how the rest of the app treats the
+    // clipboard and transform actions.
+    if (m_hasSelection && m_selection.contains(toImage(ev->pos()))) {
+        emit selectionContextRequested();
+        ev->accept();
+        return;
+    }
+    ev->ignore();
+}
+
 // ------------------------------------------------- boundary resize ------
 
 QRect CanvasView::handleWidgetRectFor(const QRectF& imageRect, int index) const {
