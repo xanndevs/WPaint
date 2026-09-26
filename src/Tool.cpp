@@ -233,6 +233,12 @@ private:
         QPainter p(&img);
         p.setRenderHint(QPainter::Antialiasing, m_kind != Pencil);
 
+        // How far beyond the from/to bounding box this brush can actually paint.
+        // The dirty box has to cover that much, otherwise commitEdit snapshots
+        // the wrong "before" region and undo restores only part of the stroke,
+        // leaving the remainder behind as artifacts.
+        qreal reach = w / 2.0;
+
         if (m_kind == Eraser) {
             p.setCompositionMode(QPainter::CompositionMode_Clear);
             QPen pen(Qt::SolidPattern);
@@ -244,8 +250,10 @@ private:
             if (w == 1)
                 p.drawPoint(to);
         } else if (m_kind == Brush && c->brushStyle() == BrushStyle::Spray) {
+            reach = sprayReach(w);
             spray(p, to, w, color);
         } else if (m_kind == Brush && c->brushStyle() == BrushStyle::Calligraphy) {
+            reach = calligraphyReach(w);
             calligraphy(p, from, to, w, color);
         } else {
             QPen pen(color);
@@ -262,7 +270,7 @@ private:
             p.drawPoint(to);
         }
 
-        const int pad = w / 2 + 2;
+        const int pad = qCeil(reach) + 2;
         const QRect dirty = QRectF(from, to).normalized()
                                 .adjusted(-pad, -pad, pad, pad)
                                 .toAlignedRect()
@@ -271,18 +279,35 @@ private:
         c->requestRepaint();
     }
 
+    // Spray geometry, shared by the dab loop and the dirty-rect calculation so
+    // the two can never disagree about how far the spray reaches.
+    static qreal sprayRadius(int w) { return qMax(2.0, std::ceil(w * 1.6)); }
+    static qreal sprayDotRadius(qreal radius) { return qMax(0.5, radius * 0.18); }
+    static qreal sprayReach(int w) {
+        const qreal radius = sprayRadius(w);
+        return radius + sprayDotRadius(radius);
+    }
+
+    // A rotated ellipse reaches sqrt(hw^2 + hh^2) from its centre, not hw.
+    static qreal calligraphyReach(int w) {
+        const qreal hw = w / 2.0;
+        const qreal hh = qMax(1.0, w * 0.35);
+        return std::sqrt(hw * hw + hh * hh);
+    }
+
     void spray(QPainter& p, const QPointF& at, int w, const QColor& color) {
         QColor col = color;
         col.setAlpha(90);
         p.setPen(Qt::NoPen);
         p.setBrush(col);
-        const int radius = qMax(2, (int)std::ceil(w * 1.6));
+        const qreal radius = sprayRadius(w);
+        const qreal dotR = sprayDotRadius(radius);
         const int n = w * 5 + 4;
         for (int i = 0; i < n; ++i) {
             const qreal ang = QRandomGenerator::global()->generateDouble() * 2 * M_PI;
             const qreal rr = QRandomGenerator::global()->generateDouble() * radius;
             const QPointF pt = at + QPointF(rr * std::cos(ang), rr * std::sin(ang));
-            p.drawEllipse(pt, qMax(0.5, radius * 0.18), qMax(0.5, radius * 0.18));
+            p.drawEllipse(pt, dotR, dotR);
         }
     }
 
