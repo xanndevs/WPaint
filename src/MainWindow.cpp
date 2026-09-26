@@ -231,52 +231,80 @@ protected:
     }
 
     void paintEvent(QPaintEvent* e) override {
-        QToolButton::paintEvent(e);
-        if (!menu()) return;
+        if (!m_split) {
+            // A menu-only button has no zone to divide, so let the style paint it
+            // exactly like every other toolbar button and just add the caret.
+            QToolButton::paintEvent(e);
+            if (!menu()) return;
+            QPainter p(this);
+            p.setRenderHint(QPainter::Antialiasing, true);
+            paintCaret(p, height() - caretBand() / 2);
+            return;
+        }
+
+        // A split button paints itself, because the highlight has to go *behind*
+        // the glyph. The base widget draws background then glyph, and anything
+        // we paint afterwards lands on top of the glyph -- so a fill either hides
+        // the tool (opaque) or stains it (translucent). Neither is right, and
+        // neither is fixable after the fact. Drawing the background first and the
+        // glyph over it is the only way to light the button up without touching
+        // the artwork. The stylesheet contributes nothing else to these buttons
+        // beyond a transparent background, a transparent 1px border and the
+        // radius, all three reproduced below.
         const auto& t = Theme::tokens();
-        const int band = m_split ? caretBand() : 0;
+        const int band = caretBand();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
-        // Hover lights exactly one zone. The generic :hover is suppressed for
-        // split buttons in the stylesheet, otherwise the whole button would
-        // light up and the split would be invisible. An active button is
-        // already unambiguously blue across its full surface, so it gets no
-        // zone highlight -- tinting a piece of it would undo that and bring
-        // back the two-buttons-inside-one look.
-        if (m_split && m_inWidget && !isChecked()) {
+        if (isChecked()) {
+            p.setPen(QPen(t.accent, 1));
+            p.setBrush(t.accent);
+            p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
+                              t.radiusSm, t.radiusSm);
+        } else if (m_inWidget) {
+            // controlHover at full strength. This used to be translucent so the
+            // glyph could survive being painted over; now the glyph goes on top
+            // of the fill, so the highlight can be the real colour.
             p.setPen(Qt::NoPen);
             p.setBrush(t.controlHover);
-            const QRectF body(0, 0, width(), height() - band);
-            const QRectF caret(0, height() - band, width(), band);
-            // Translucent, not opaque: the base widget has already drawn the
-            // glyph and anything painted over it hides the tool. Repainting the
-            // glyph afterwards is not an option either -- the style's layout
-            // rect ignores the stylesheet padding, so the copy lands several
-            // pixels off from the original. A tint shows the hover without ever
-            // touching the glyph.
-            QColor fill = t.controlHover;
-            fill.setAlpha(150);
-            p.setBrush(fill);
             if (m_hoverMenu)
-                fillZone(p, caret, /*roundTop=*/false, t.radiusSm);
+                fillZone(p, QRectF(0, height() - band, width(), band),
+                         /*roundTop=*/false, t.radiusSm);
             else
-                fillZone(p, body, /*roundTop=*/true, t.radiusSm);
+                fillZone(p, QRectF(0, 0, width(), height() - band),
+                         /*roundTop=*/true, t.radiusSm);
         }
 
+        // The glyph, centred on the part of the button that selects the tool so
+        // it is optically centred in its own half rather than in the whole box.
+        const QRect area(0, 0, width(), height() - band);
+        const QSize is = iconSize();
+        if (!icon().isNull() && is.width() > 0 && is.height() > 0) {
+            const qreal dpr = qMax<qreal>(2.0, devicePixelRatioF());
+            const QPixmap pm = icon().pixmap(is, dpr);
+            if (!pm.isNull())
+                p.drawPixmap(QPoint(area.center().x() - is.width() / 2,
+                                    area.center().y() - is.height() / 2),
+                             pm);
+        }
+
+        if (!menu()) return;
+        paintCaret(p, height() - band / 2);
+    }
+
+    void paintCaret(QPainter& p, int cy) {
+        const auto& t = Theme::tokens();
         const int glyph = t.caretGlyph;
-        // Theme::icon renders at 2x and hands back a pixmap whose devicePixelRatio
-        // is already 2. Asking for .pixmap(glyph, glyph) would then downscale that
-        // and a 10px caret comes back as a faint smear with no solid pixel in it,
-        // so ask at the native ratio instead and let the painter scale it down.
+        // Theme::icon renders at 2x and hands back a pixmap whose
+        // devicePixelRatio is already 2, so asking for .pixmap(glyph, glyph)
+        // makes Qt downscale it and a 10px caret comes back as a faint smear
+        // with no solid pixel in it. Ask at the native ratio instead and let
+        // the painter scale it down.
         const qreal dpr = qMax<qreal>(2.0, devicePixelRatioF());
         const QPixmap pm = Theme::icon("chevron-down", glyph,
                                        isChecked() ? t.iconOnAccent : t.icon)
                                .pixmap(QSize(glyph, glyph), dpr);
         if (pm.isNull()) return;
-        // Always the centre of the caret strip, split or not, so a menu-only
-        // button and a split one carry their caret at the same height.
-        const int cy = height() - caretBand() / 2;
         p.drawPixmap((width() - glyph) / 2, cy - glyph / 2, pm);
     }
 
