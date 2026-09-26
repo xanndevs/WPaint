@@ -10,6 +10,7 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QPainter>
+#include <QStyle>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -22,8 +23,9 @@ QImage thumbFor(const QImage& img, const QSize& out) {
     const QSize scaled = img.size().scaled(out - QSize(2, 2), Qt::KeepAspectRatio);
     if (scaled.width() < 1 || scaled.height() < 1) return canvas;
     QPainter p(&canvas);
-    Draw::checkerboard(p, QRect(QPoint(0, 0), out), 4, QColor("#ffffff"),
-                       QColor("#c8c8c8"));
+    const auto& tk = Theme::tokens();
+    Draw::checkerboard(p, QRect(QPoint(0, 0), out), 4, tk.checkerLight,
+                       tk.checkerDark);
     const QImage thumb =
         img.scaled(scaled, Qt::KeepAspectRatio, Qt::FastTransformation);
     const QPoint pos((out.width() - thumb.width()) / 2,
@@ -43,7 +45,6 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
 
     m_count = new QLabel("Layer 1", this);
     m_count->setObjectName("LayersCount");
-
     m_list = new QListWidget(this);
     m_list->setObjectName("LayersList");
     m_list->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -69,15 +70,21 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
     Q_UNUSED(thumbH);
 
     auto* header = new QHBoxLayout;
+    header->setContentsMargins(6, 4, 4, 4);
+    header->setSpacing(4);
     header->addWidget(m_count);
     header->addStretch(1);
     header->addWidget(m_add);
     header->addWidget(m_remove);
 
+    m_header = new QWidget(this);
+    m_header->setObjectName("LayersHeader");
+    m_header->setLayout(header);
+
     auto* layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
-    layout->addLayout(header);
+    layout->addWidget(m_header);
     layout->addWidget(m_list, 1);
 
     connect(m_add, &QToolButton::clicked, this, &LayersPanel::addRequested);
@@ -99,10 +106,6 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
                 if (from != to)
                     emit moveRequested(from, to);
             });
-
-    auto* hint = new QLabel(tr("Select a layer to draw on"), this);
-    hint->setObjectName("LayersHint");
-    Q_UNUSED(hint);
 
     connect(m_stack, &LayerStack::changed, this, &LayersPanel::rebuildList);
     connect(m_stack, &LayerStack::activeChanged, this,
@@ -134,6 +137,7 @@ void LayersPanel::rebuildList() {
         QListWidgetItem* item = new QListWidgetItem(m_list);
 
         QWidget* row = new QWidget(this);
+        row->setObjectName("LayerRow");
         auto* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(4, 2, 4, 2);
         rowLayout->setSpacing(6);
@@ -170,6 +174,7 @@ void LayersPanel::rebuildList() {
 
         item->setSizeHint(row->sizeHint());
         row->setProperty("layerIndex", i);
+        row->setProperty("wpActive", i == m_stack->activeIndex());
         m_list->setItemWidget(item, row);
     }
 
@@ -180,12 +185,18 @@ void LayersPanel::rebuildList() {
     m_syncing = false;
 }
 
-void LayersPanel::onCurrentRowChanged(int row) {
-    if (m_syncing || row < 0) return;
+void LayersPanel::applyActiveProperty(int activeRow) {
     for (int i = 0; i < m_list->count(); ++i) {
         QWidget* rowWidget = m_list->itemWidget(m_list->item(i));
-        if (rowWidget)
-            rowWidget->setProperty("selected", i == row);
+        if (!rowWidget) continue;
+        rowWidget->setProperty("wpActive", i == activeRow);
+        rowWidget->style()->unpolish(rowWidget);
+        rowWidget->style()->polish(rowWidget);
     }
+}
+
+void LayersPanel::onCurrentRowChanged(int row) {
+    if (m_syncing || row < 0) return;
+    applyActiveProperty(row);
     emit activeRequested(row);
 }

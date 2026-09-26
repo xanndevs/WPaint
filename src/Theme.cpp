@@ -420,6 +420,41 @@ QDialog { background: %4; }
 #SizeValue { color: %11; font-size: %12px; }
 #CaptionMuted { color: %11; }
 
+/* ---- Layers rail ---- */
+#LayersPanel { background: %4; }
+#LayersHeader {
+    background: %4; border-bottom: 1px solid %5;
+}
+/* The layers dock carries its caption in a custom title-bar widget, so the
+   stock QDockWidget title styling would double up. */
+#LayersDock::title { background: %4; border: none; padding: 0; }
+#LayersCount {
+    color: %3; font-weight: 600; font-size: %12px; background: transparent;
+}
+#LayersList {
+    background: %4; border: none; border-radius: 0; outline: none; padding: 0;
+}
+#LayersList::item {
+    background: transparent; border: none; border-radius: 0;
+    padding: 0; margin: 0;
+}
+#LayersList::item:hover { background: %7; }
+#LayersList::item:selected { background: transparent; color: %3; }
+#LayersList::item:selected:hover { background: %7; }
+#LayerRow { background: transparent; border-radius: %6; }
+#LayerRow:hover { background: %7; }
+#LayerRow[wpActive="true"] { background: %16; }
+#LayerName {
+    color: %3; background: transparent; padding: 0 4px 0 0;
+}
+#LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
+#LayerEyeBtn, #LayerStripBtn {
+    background: transparent; border: none; border-radius: %6;
+    padding: 0; min-width: 0; min-height: 0;
+}
+#LayerEyeBtn:hover, #LayerStripBtn:hover { background: %7; }
+#LayerEyeBtn:disabled, #LayerStripBtn:disabled { background: transparent; }
+
 /* ---- Floating brush-size panel ---- */
 #SizeSliderPanel {
     background: %9; border: 1px solid %17; border-radius: %28;

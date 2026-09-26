@@ -861,6 +861,9 @@ void MainWindow::buildDocks() {
     m_layersDock = new QDockWidget(tr("Layers"), this);
     m_layersDock->setObjectName("LayersDock");
     m_layersDock->setWidget(m_layersPanel);
+    // The panel's own caption strip is the title bar: Qt stops painting its
+    // own "Layers" caption, which used to stack on top of the panel's.
+    m_layersDock->setTitleBarWidget(m_layersPanel->headerWidget());
     m_layersDock->setAllowedAreas(Qt::RightDockWidgetArea |
                                   Qt::LeftDockWidgetArea);
     addDockWidget(Qt::RightDockWidgetArea, m_layersDock);
