@@ -76,6 +76,15 @@ QString brushStyleName(BrushStyle s) {
     return "";
 }
 
+QString shapeStyleName(ShapeStyle s) {
+    switch (s) {
+    case ShapeStyle::Outline: return QObject::tr("Outline");
+    case ShapeStyle::Fill: return QObject::tr("Fill");
+    case ShapeStyle::OutlineFill: return QObject::tr("Outline and fill");
+    }
+    return "";
+}
+
 QString shapeStyleIcon(ShapeStyle s) {
     switch (s) {
     case ShapeStyle::Outline: return "shape-outline";
@@ -103,10 +112,10 @@ QIcon renderedIcon(const QString& svgName, int px) {
     return ic;
 }
 
-// A split button whose gallery caret is always visible at the bottom. The QSS
-// "menu-indicator" sub-control already carries the caret for InstantPopup
-// buttons; MenuButtonPopup buttons only draw that indicator while the menu is
-// open, so paint it here as well.
+// A split button whose gallery caret is always visible at the bottom. The
+// caret is drawn here rather than through the QSS "menu-indicator"
+// sub-control, which has no cross-axis room and clipped the chevron into a
+// 14x5 bar. Theme::icon() gives us the marker-tinted glyph for free.
 class PopupButton : public QToolButton {
 public:
     using QToolButton::QToolButton;
@@ -114,14 +123,14 @@ public:
 protected:
     void paintEvent(QPaintEvent* e) override {
         QToolButton::paintEvent(e);
-        if (popupMode() != QToolButton::MenuButtonPopup || !menu())
-            return;
+        if (!menu()) return;
+        const int caret = 12;
+        const QPixmap pm = Theme::icon("chevron-down", caret)
+                               .pixmap(caret, caret, QIcon::Normal, QIcon::Off);
+        if (pm.isNull()) return;
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
-        p.setPen(Qt::NoPen);
-        p.setBrush(Theme::tokens().textSecondary);
-        const int w = 14, h = 5;
-        p.drawRoundedRect(QRect(width() / 2 - w / 2, height() - h - 1, w, h), 2, 2);
+        p.drawPixmap((width() - caret) / 2, height() - caret - 1, pm);
     }
 };
 
@@ -574,7 +583,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
     {
         const int big = 2 * Theme::tokens().toolbarBtn;
         const int iconPx = 2 * 20;
-        m_shapeButton = new QToolButton(bar);
+        m_shapeButton = new PopupButton(bar);
         m_shapeButton->setObjectName("MenuButtonPopup");
         m_shapeButton->setProperty("wpBig", 1);
         m_shapeButton->setPopupMode(QToolButton::InstantPopup);
@@ -604,7 +613,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
             }
         m_shapeButton->setMenu(shapeMenu);
 
-        m_shapeStyleButton = new QToolButton(bar);
+        m_shapeStyleButton = new PopupButton(bar);
         m_shapeStyleButton->setObjectName("MenuButtonPopup");
         m_shapeStyleButton->setProperty("wpBig", 1);
         m_shapeStyleButton->setPopupMode(QToolButton::InstantPopup);
@@ -616,8 +625,8 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         QActionGroup* styleGrp = new QActionGroup(styleMenu);
         styleGrp->setExclusive(true);
         for (ShapeStyle st : kShapeStyles) {
-            QAction* a = styleMenu->addAction(QString());
-            a->setIcon(Theme::icon(shapeStyleIcon(st), 18));
+            QAction* a = styleMenu->addAction(Theme::icon(shapeStyleIcon(st), 18),
+                                              shapeStyleName(st));
             styleGrp->addAction(a);
             connect(a, &QAction::triggered, this, [this, st] {
                 applyShapeStyle(st);

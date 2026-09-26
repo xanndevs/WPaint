@@ -267,13 +267,10 @@ QToolButton:disabled { background: %16; }
 QToolButton[wpFlat="1"] { min-width: 0px; min-height: 0px; padding: 3px 4px; }
 QToolButton[wpBig="1"] { min-width: %26px; min-height: %26px; }
 QToolButton#MenuButtonPopup { padding-bottom: %27px; }
-QToolButton#MenuButtonPopup::menu-indicator {
-    subcontrol-origin: padding;
-    subcontrol-position: bottom center;
-    width: 14px; height: 5px;
-    background: %11;
-    border-radius: 2px;
-}
+/* The gallery caret is painted by PopupButton with the marker-tinted
+   chevron-down glyph; a QSS sub-control has no cross-axis room and
+   squashed it into a 14x5 bar. */
+QToolButton#MenuButtonPopup::menu-indicator { image: none; width: 0; height: 0; }
 QToolButton::menu-indicator { image: none; width: 0; height: 0; }
 
 /* Drop-down arrow for menu-button popups drawn by Qt itself */
