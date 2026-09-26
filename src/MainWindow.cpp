@@ -118,14 +118,30 @@ QIcon renderedIcon(const QString& svgName, int px) {
 
 // Draws `zone` with only its outer corners rounded, so it reads as one button
 // divided into zones rather than a smaller button sitting on a bigger one.
-static void fillZone(QPainter& p, const QRectF& zone, bool roundTop, qreal radius) {
-    p.drawRoundedRect(zone, radius, radius);
-    // Square off the two corners that meet the neighbouring zone.
-    const QRectF flat = roundTop ? QRectF(zone.left(), zone.center().y(),
-                                          zone.width(), zone.height() / 2.0)
-                                 : QRectF(zone.left(), zone.top(),
-                                          zone.width(), zone.height() / 2.0);
-    p.drawRect(flat);
+static void fillZone(QPainter& p, const QRectF& z, bool roundTop, qreal radius) {
+    // One path, one fill. Squaring the inner corners by painting a second rect
+    // over the first composes the translucent fill twice in that half, which
+    // shows up as a hard brightness step halfway down the zone.
+    const qreal r = qBound<qreal>(0.0, radius, qMin(z.width(), z.height()) / 2.0);
+    QPainterPath path;
+    if (roundTop) {
+        path.moveTo(z.left() + r, z.top());
+        path.lineTo(z.right() - r, z.top());
+        path.arcTo(QRectF(z.right() - 2 * r, z.top(), 2 * r, 2 * r), 90, -90);
+        path.lineTo(z.right(), z.bottom());
+        path.lineTo(z.left(), z.bottom());
+        path.lineTo(z.left(), z.top() + r);
+        path.arcTo(QRectF(z.left(), z.top(), 2 * r, 2 * r), 180, -90);
+    } else {
+        path.moveTo(z.left(), z.top());
+        path.lineTo(z.right(), z.top());
+        path.lineTo(z.right(), z.bottom() - r);
+        path.arcTo(QRectF(z.right() - 2 * r, z.bottom() - 2 * r, 2 * r, 2 * r), 0, -90);
+        path.lineTo(z.left() + r, z.bottom());
+        path.arcTo(QRectF(z.left(), z.bottom() - 2 * r, 2 * r, 2 * r), 270, -90);
+    }
+    path.closeSubpath();
+    p.fillPath(path, p.brush());
 }
 
 // A gallery button, optionally split into two stacked zones: the body picks the
