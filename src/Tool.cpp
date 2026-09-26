@@ -212,6 +212,18 @@ public:
         m_button = Qt::NoButton;
     }
 
+    Qt::MouseButton gestureButton() const override { return m_button; }
+
+    bool cancelGesture(CanvasView* c) override {
+        if (m_button == Qt::NoButton) return false;
+        m_button = Qt::NoButton;
+        // Undo the pixels this stroke already laid down and close the session
+        // without ever pushing an undo entry.
+        c->revertActiveEdit();
+        c->requestRepaint();
+        return true;
+    }
+
 private:
     void paintAt(CanvasView* c, const QPointF& from, const QPointF& to) {
         QImage& img = c->layerImage(c->activeLayerIndex());
@@ -470,7 +482,7 @@ void ShapeTool::setShape(ToolId shape) {
 }
 
 void ShapeTool::mousePress(CanvasView* c, QMouseEvent* ev) {
-    if (ev->button() != Qt::LeftButton) return;
+    if (ev->button() != Qt::LeftButton && ev->button() != Qt::RightButton) return;
     const QPointF p = c->toImage(ev->position());
     if (c->hasActiveObject())
         c->bakeActiveObject(); // finalize the previous shape before a new one
@@ -486,6 +498,9 @@ void ShapeTool::mousePress(CanvasView* c, QMouseEvent* ev) {
         }
         if (m_active)
             commitGesture(c);
+        // Set only after committing, so the shape being finished keeps the
+        // colours of the button that started it.
+        m_button = ev->button();
         m_active = true;
         m_bendArm = 0;
         m_c1 = m_c2 = QPointF();
@@ -493,6 +508,7 @@ void ShapeTool::mousePress(CanvasView* c, QMouseEvent* ev) {
     } else {
         if (m_active)
             commitGesture(c);
+        m_button = ev->button();
         m_active = true;
         m_a = m_b = p;
     }
@@ -516,7 +532,7 @@ void ShapeTool::mouseMove(CanvasView* c, QMouseEvent* ev) {
 }
 
 void ShapeTool::mouseRelease(CanvasView* c, QMouseEvent* ev) {
-    if (ev->button() != Qt::LeftButton) return;
+    if (ev->button() != m_button) return;
     if (m_bending) {
         m_bending = false;
         if (m_shape == ToolId::ShapeCurve) {
@@ -562,16 +578,16 @@ void ShapeTool::paintOverlay(QPainter& p, CanvasView* c) const {
     if (m_shape == ToolId::ShapeCurve) {
         const QPainterPath path = curvePath();
         if (!path.isEmpty())
-            ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, c->secondary(), path);
+            ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path);
     } else if (m_shape == ToolId::ShapeLine) {
         QPainterPath path;
         path.moveTo(m_a);
         path.lineTo(m_b);
-        ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, c->secondary(), path);
+        ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path);
     } else {
         const QRectF r = QRectF(m_a, m_b).normalized();
         if (r.width() < 0.5 && r.height() < 0.5) return;
-        ShapeKit::draw(p, m_shape, r, m_style, pen, c->secondary(), QPainterPath());
+        ShapeKit::draw(p, m_shape, r, m_style, pen, fillColor(c), QPainterPath());
     }
 
     // boundary guide: dashed box around the shape being painted
@@ -584,8 +600,16 @@ void ShapeTool::paintOverlay(QPainter& p, CanvasView* c) const {
     p.drawRect(guide);
 }
 
+QColor ShapeTool::outlineColor(CanvasView* c) const {
+    return m_button == Qt::RightButton ? c->secondary() : c->primary();
+}
+
+QColor ShapeTool::fillColor(CanvasView* c) const {
+    return m_button == Qt::RightButton ? c->primary() : c->secondary();
+}
+
 QPen ShapeTool::makePen(CanvasView* c) const {
-    QPen pen(c->primary());
+    QPen pen(outlineColor(c));
     pen.setWidth(qMax(1, c->brushSize()));
     pen.setCapStyle(Qt::SquareCap);
     pen.setJoinStyle(Qt::MiterJoin);
@@ -611,7 +635,16 @@ void ShapeTool::resetGesture() {
     m_active = false;
     m_bending = false;
     m_bendArm = 0;
+    m_button = Qt::NoButton;
     m_c1 = m_c2 = QPointF();
+}
+
+bool ShapeTool::cancelGesture(CanvasView* c) {
+    if (m_button == Qt::NoButton) return false;
+    const bool had = m_active || m_bending || m_bendArm != 0;
+    resetGesture();
+    c->requestRepaint();
+    return had;
 }
 
 void ShapeTool::commitGesture(CanvasView* c) {
@@ -620,7 +653,7 @@ void ShapeTool::commitGesture(CanvasView* c) {
     const QRectF r = QRectF(m_a, m_b).normalized();
     QPen pen = makePen(c);
     c->attachShapeObject(layer, m_shape, m_style, pen.width(), pen.color(),
-                         c->secondary(), r, m_a, m_b, m_c1, m_c2);
+                         fillColor(c), r, m_a, m_b, m_c1, m_c2);
     resetGesture();
     c->requestRepaint();
 }

@@ -919,6 +919,16 @@ void CanvasView::mousePressEvent(QMouseEvent* ev) {
     if (m_boundaryResize) finishBoundaryResize();
     if (m_selResizing) finishSelectionResize();
     if (m_objectDragging) finishObjectDrag();
+    // Pressing the other button abandons a gesture already in progress, so
+    // right-dragging a shape and then clicking left throws the shape away, and
+    // the same works in reverse for a right-button stroke. This is a local
+    // revert rather than an undo, so nothing lands on the undo stack.
+    if (m_tool && m_tool->gestureButton() != Qt::NoButton &&
+        ev->button() != m_tool->gestureButton()) {
+        m_tool->cancelGesture(this);
+        ev->accept();
+        return;
+    }
     const bool left = ev->button() == Qt::LeftButton;
     const bool selectTool = m_tool && m_tool->id() == ToolId::Select;
     const bool shapeTool =

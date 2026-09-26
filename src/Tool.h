@@ -100,6 +100,20 @@ public:
         Q_UNUSED(canvas);
         Q_UNUSED(ev);
     }
+
+    // Which button started the gesture currently in progress, or NoButton when
+    // idle. CanvasView uses this so that pressing the *other* button cancels,
+    // which is why a tool drawable with either button has to say which one it
+    // is using.
+    virtual Qt::MouseButton gestureButton() const { return Qt::NoButton; }
+
+    // Abandon the gesture in progress, discarding whatever it staged or drew.
+    // Returns true if there was something to abandon. This is a local revert,
+    // not an undo-stack push: nothing is ever committed by a cancel.
+    virtual bool cancelGesture(CanvasView* canvas) {
+        Q_UNUSED(canvas);
+        return false;
+    }
 };
 
 // Shape gallery tool: one instance handles every shape kind; the active
@@ -126,8 +140,16 @@ public:
     void onDeactivate(CanvasView* c) override;
     void paintOverlay(QPainter& p, CanvasView* c) const override;
 
+    Qt::MouseButton gestureButton() const override { return m_button; }
+    bool cancelGesture(CanvasView* c) override;
+
 private:
     QPen makePen(CanvasView* c) const;
+    // A right-button gesture swaps the two colours' roles: the outline is drawn
+    // with color 2 and the fill with color 1. The user's actual colour pair is
+    // left alone -- only this shape uses them the other way round.
+    QColor outlineColor(CanvasView* c) const;
+    QColor fillColor(CanvasView* c) const;
     QPainterPath curvePath() const;
     void resetGesture();
     void commitGesture(CanvasView* c);
@@ -138,6 +160,7 @@ private:
     bool m_active = false;
     bool m_bending = false;
     int m_bendArm = 0; // curve bend phase 0=none, 1=arm1, 2=arm2
+    Qt::MouseButton m_button = Qt::NoButton; // button that started the gesture
     QPointF m_a, m_b;  // shape corners / curve endpoints
     QPointF m_c1, m_c2;
 };
