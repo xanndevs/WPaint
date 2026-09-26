@@ -233,16 +233,19 @@ protected:
             p.setBrush(t.controlHover);
             const QRectF body(0, 0, width(), height() - band);
             const QRectF caret(0, height() - band, width(), band);
-            if (m_hoverMenu) {
+            // Translucent, not opaque: the base widget has already drawn the
+            // glyph and anything painted over it hides the tool. Repainting the
+            // glyph afterwards is not an option either -- the style's layout
+            // rect ignores the stylesheet padding, so the copy lands several
+            // pixels off from the original. A tint shows the hover without ever
+            // touching the glyph.
+            QColor fill = t.controlHover;
+            fill.setAlpha(150);
+            p.setBrush(fill);
+            if (m_hoverMenu)
                 fillZone(p, caret, /*roundTop=*/false, t.radiusSm);
-            } else {
+            else
                 fillZone(p, body, /*roundTop=*/true, t.radiusSm);
-                // The base already drew the glyph and this fill is opaque, so
-                // the tool would disappear under it. Put it back, using the
-                // geometry the style already worked out rather than guessing
-                // where padding put it.
-                repaintIcon(p);
-            }
         }
 
         const int glyph = t.caretGlyph;
@@ -255,21 +258,10 @@ protected:
                                        isChecked() ? t.iconOnAccent : t.icon)
                                .pixmap(QSize(glyph, glyph), dpr);
         if (pm.isNull()) return;
-        const int cy = band ? height() - band / 2 : height() - glyph - 1;
+        // Always the centre of the caret strip, split or not, so a menu-only
+        // button and a split one carry their caret at the same height.
+        const int cy = height() - caretBand() / 2;
         p.drawPixmap((width() - glyph) / 2, cy - glyph / 2, pm);
-    }
-
-    void repaintIcon(QPainter& p) {
-        if (icon().isNull() || iconSize().isEmpty()) return;
-        QStyleOptionToolButton opt;
-        opt.initFrom(this);
-        opt.icon = icon();
-        opt.iconSize = iconSize();
-        opt.toolButtonStyle = Qt::ToolButtonIconOnly;
-        const QRect r = style()->subElementRect(QStyle::SE_ToolButtonLayoutItem, &opt,
-                                                this);
-        if (!r.isValid() || r.isEmpty()) return;
-        p.drawPixmap(r, icon().pixmap(r.size()));
     }
 
 private:
