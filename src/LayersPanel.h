@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QWidget>
 
 class QLabel;
@@ -29,6 +30,9 @@ signals:
     void addRequested();
     void removeRequested(int layerIndex);
     void renameRequested(int layerIndex, const QString& name);
+    // The background swatch was clicked; MainWindow opens the colour picker
+    // and turns the result into an undoable layer change.
+    void backgroundEditRequested(int layerIndex);
 
 private:
     void rebuildList();

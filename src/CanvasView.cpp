@@ -687,7 +687,10 @@ void CanvasView::cropTo(const QRectF& imageRect) {
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
-        l.image = l.image.copy(r);
+        // The background layer holds no pixels; its colour is reapplied across
+        // whatever the new canvas size is, so it rides along unchanged.
+        if (!l.isBackground)
+            l.image = l.image.copy(r);
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
@@ -714,7 +717,8 @@ void CanvasView::rotateCanvas(qreal degrees) {
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
-        l.image = Draw::rotateImage(l.image, degrees);
+        if (!l.isBackground)
+            l.image = Draw::rotateImage(l.image, degrees);
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
@@ -730,7 +734,8 @@ void CanvasView::flipCanvas(Qt::Orientation orientation) {
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
-        l.image = Draw::flipImage(l.image, orientation);
+        if (!l.isBackground)
+            l.image = Draw::flipImage(l.image, orientation);
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
@@ -1249,13 +1254,19 @@ void CanvasView::drawWorkspace(QPainter& p) {
     p.translate(m_canvasOrigin);
     p.scale(m_zoom, m_zoom);
 
-    // canvas content
-    Draw::checkerboard(p, QRect(QPoint(0, 0), img), 8,
-                       Theme::tokens().checkerLight, Theme::tokens().checkerDark);
+    // canvas content. The background layer holds no pixels, so its colour is
+    // filled here; with the background hidden the checkerboard shows through.
+    const int bg = m_stack->backgroundIndex();
+    if (bg >= 0 && m_stack->layerAt(bg).visible) {
+        p.fillRect(QRect(QPoint(0, 0), img), m_stack->layerAt(bg).backgroundColor);
+    } else {
+        Draw::checkerboard(p, QRect(QPoint(0, 0), img), 8,
+                           Theme::tokens().checkerLight, Theme::tokens().checkerDark);
+    }
     p.setRenderHint(QPainter::SmoothPixmapTransform, true);
     for (int i = m_stack->count() - 1; i >= 0; --i) {
         const Layer& l = m_stack->layerAt(i);
-        if (!l.visible) continue;
+        if (!l.visible || l.isBackground || l.image.isNull()) continue;
         p.drawImage(QPointF(0, 0), l.image);
     }
     if (m_floatingActive)

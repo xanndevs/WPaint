@@ -221,8 +221,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     Layer layer;
     layer.name = tr("Layer 1");
     layer.image = QImage(kDefaultSize, QImage::Format_ARGB32_Premultiplied);
-    layer.image.fill(Qt::white);
+    // Transparent: the background layer below supplies the white backdrop, so
+    // "clear" leaves the backdrop rather than a white plate that hides it.
+    layer.image.fill(Qt::transparent);
     m_stack->replaceAll({layer}, 0);
+    m_stack->addBackgroundLayer(Qt::white);
 
     m_canvas = new CanvasView(m_stack, m_undo, this);
     m_canvas->setColors(QColor("#000000"), QColor("#FFFFFF"));
@@ -274,6 +277,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             &MainWindow::removeLayer);
     connect(m_layersPanel, &LayersPanel::renameRequested, this,
             &MainWindow::renameLayer);
+    connect(m_layersPanel, &LayersPanel::backgroundEditRequested, this,
+            &MainWindow::editBackgroundColor);
 
     selectTool(ToolId::Pencil);
     syncStatusSize();
@@ -1031,8 +1036,9 @@ void MainWindow::newDocument() {
     Layer l;
     l.name = tr("Layer 1");
     l.image = QImage(kDefaultSize, QImage::Format_ARGB32_Premultiplied);
-    l.image.fill(Qt::white);
+    l.image.fill(Qt::transparent);
     m_stack->replaceAll({l}, 0);
+    m_stack->addBackgroundLayer(Qt::white);
     updateWindowTitle();
 }
 
@@ -1078,6 +1084,10 @@ void MainWindow::installDocument(const LayerStack& loaded, const QString& path) 
     m_canvas->cancelFloating();
     m_undo->clear();
     m_stack->replaceAll(loaded.layers(), loaded.activeIndex());
+    // Flat images and v1 projects arrive with no backdrop of their own; give
+    // them one so every document has the same shape.
+    if (!m_stack->hasBackground())
+        m_stack->addBackgroundLayer(Qt::white);
     m_currentPath = path;
     updateWindowTitle();
     m_canvas->zoomFit();
@@ -1122,9 +1132,10 @@ bool MainWindow::saveTo(const QString& path) {
     const bool pngLike = path.endsWith(QLatin1String(".png"), Qt::CaseInsensitive);
     QImage out = flat;
     if (!pngLike) {
-        // JPEG/BMP/GIF have no alpha: composite onto white first.
+        // JPEG/BMP/GIF have no alpha: composite onto the document's background
+        // colour first, falling back to white when it is hidden.
         out = QImage(flat.size(), QImage::Format_RGB32);
-        out.fill(Qt::white);
+        out.fill(m_stack->exportBackdrop());
         QPainter p(&out);
         p.drawImage(0, 0, flat);
         p.end();
@@ -1297,6 +1308,21 @@ void MainWindow::renameLayer(int index, const QString& name) {
     if (index < 0 || index >= m_stack->count())
         return;
     runLayerCommand(tr("Rename layer"), [this, index, name] { m_stack->renameLayer(index, name); });
+}
+
+void MainWindow::editBackgroundColor(int index) {
+    if (index < 0 || index >= m_stack->count() ||
+        !m_stack->layerAt(index).isBackground)
+        return;
+    ColorDialog dlg(m_stack->layerAt(index).backgroundColor, this);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    const QColor chosen = dlg.chosenColor();
+    if (chosen == m_stack->layerAt(index).backgroundColor)
+        return;
+    // Structural, so it flows through runLayerCommand and is undoable.
+    runLayerCommand(tr("Background color"),
+                    [this, index, chosen] { m_stack->setBackgroundColor(index, chosen); });
 }
 
 void MainWindow::closeEvent(QCloseEvent* ev) {

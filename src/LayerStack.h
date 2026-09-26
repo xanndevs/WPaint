@@ -28,6 +28,15 @@ public:
     Layer& activeLayer() { return m_layers[m_active]; }
     const Layer& activeLayer() const { return m_layers.at(m_active); }
 
+    // The background layer always lives at the bottom of the stack, so it is
+    // the last entry (index 0 is topmost). -1 when the document has none.
+    int backgroundIndex() const;
+    bool hasBackground() const { return backgroundIndex() >= 0; }
+    // The colour to flatten over when exporting a format with no alpha.
+    // Transparent-background documents fall back to white, since JPEG/BMP/GIF
+    // cannot represent transparency.
+    QColor exportBackdrop() const;
+
     // Flattened rendering of the visible layers onto a transparent image.
     QImage composite() const;
 
@@ -42,11 +51,17 @@ public:
     void removeLayer(int index);
     void moveLayer(int from, int to); // reorder around the active index
     void setLayerVisible(int i, bool visible);
+    void setBackgroundColor(int i, const QColor& color);
     void renameLayer(int i, const QString& name);
     void setActiveIndex(int i);
 
     QString nextName(const QString& base) const;
     void clear();
+
+    // Appends a default background layer to the bottom of the stack. Callers
+    // that want one should go through here rather than addLayer(), which
+    // deliberately refuses background entries.
+    void addBackgroundLayer(const QColor& color);
 
     // Native layered project format (.wpa).
     SaveResult saveProject(const QString& path) const;

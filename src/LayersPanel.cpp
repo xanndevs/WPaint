@@ -129,12 +129,18 @@ void LayersPanel::rebuildList() {
 
     const int n = m_stack->count();
     m_count->setText(tr("Layers (%1)").arg(n));
-    m_remove->setEnabled(n > 1);
+    // The background can neither be removed nor be the only thing left.
+    const int bg = m_stack->backgroundIndex();
+    m_remove->setEnabled(n > 1 && m_list->currentRow() != bg);
 
     for (int i = 0; i < n; ++i) {
         const Layer& layer = m_stack->layerAt(i);
 
         QListWidgetItem* item = new QListWidgetItem(m_list);
+        // The background is pinned to the bottom of the stack, so it must not
+        // be selectable as a paint target or dragged out of position.
+        if (layer.isBackground)
+            item->setFlags(Qt::ItemIsEnabled);
 
         QWidget* row = new QWidget(this);
         row->setObjectName("LayerRow");
@@ -150,8 +156,6 @@ void LayersPanel::rebuildList() {
         eye->setToolTip(tr("Toggle layer visibility"));
         const QIcon eyeIcon = Theme::icon("eye", 18);
         const QIcon eyeOff = Theme::icon("eye-off", 18);
-        const int ei = m_stack->activeIndex() == i && !layer.visible ? 18 : 18;
-        Q_UNUSED(ei);
         eye->setIcon(layer.visible ? eyeIcon : eyeOff);
         eye->setIconSize(QSize(18, 18));
         connect(eye, &QToolButton::clicked, this, [this, eye, i](bool on) {
@@ -159,17 +163,40 @@ void LayersPanel::rebuildList() {
             emit visibilityRequested(i, on);
         });
 
-        auto* thumb = new QLabel(row);
-        thumb->setPixmap(QPixmap::fromImage(
-            thumbFor(layer.image, QSize(64, 34))));
-        thumb->setFixedSize(66, 36);
+        auto* thumbLayout = new QHBoxLayout;
+        if (layer.isBackground) {
+            // A flat swatch of the backdrop colour, clickable to recolour it.
+            auto* swatch = new QToolButton(row);
+            swatch->setObjectName("LayerBackgroundSwatch");
+            swatch->setFixedSize(66, 36);
+            swatch->setToolTip(tr("Change background color"));
+            const auto& tk = Theme::tokens();
+            QPixmap pm(66, 36);
+            pm.fill(layer.backgroundColor);
+            QPainter sp(&pm);
+            sp.setPen(QPen(tk.canvasBorder, 1));
+            sp.drawRect(pm.rect().adjusted(0, 0, -1, -1));
+            sp.end();
+            swatch->setIcon(QIcon(pm));
+            swatch->setIconSize(QSize(66, 36));
+            const int index = i;
+            connect(swatch, &QToolButton::clicked, this,
+                    [this, index] { emit backgroundEditRequested(index); });
+            thumbLayout->addWidget(swatch);
+        } else {
+            auto* thumb = new QLabel(row);
+            thumb->setPixmap(QPixmap::fromImage(
+                thumbFor(layer.image, QSize(64, 34))));
+            thumb->setFixedSize(66, 36);
+            thumbLayout->addWidget(thumb);
+        }
 
         auto* name = new QLabel(layer.name, row);
         name->setObjectName("LayerName");
         name->setMinimumWidth(60);
 
         rowLayout->addWidget(eye);
-        rowLayout->addWidget(thumb);
+        rowLayout->addLayout(thumbLayout);
         rowLayout->addWidget(name, 1);
 
         item->setSizeHint(row->sizeHint());

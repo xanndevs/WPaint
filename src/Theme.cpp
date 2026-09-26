@@ -451,6 +451,11 @@ QDialog { background: %4; }
 }
 #LayerEyeBtn:hover, #LayerStripBtn:hover { background: %7; }
 #LayerEyeBtn:disabled, #LayerStripBtn:disabled { background: transparent; }
+#LayerBackgroundSwatch {
+    border: 1px solid %5; border-radius: %6; padding: 0;
+    min-width: 0; min-height: 0;
+}
+#LayerBackgroundSwatch:hover { border-color: %14; }
 
 /* ---- Floating brush-size panel ---- */
 #SizeSliderPanel {

@@ -139,6 +139,7 @@ private:
     void removeLayer(int index);
     void toggleLayerVisibility(int index, bool visible);
     void renameLayer(int index, const QString& name);
+    void editBackgroundColor(int index);
     void runLayerCommand(const QString& text, std::function<void()> mutate);
 
     // model + view

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QColor>
 #include <QImage>
 #include <QString>
 
@@ -9,6 +10,13 @@ struct Layer {
     QString name;
     QImage image;   // ARGB32_Premultiplied
     bool visible = true;
+
+    // The background layer sits at the very bottom of the stack and holds no
+    // pixels: it is a flat colour applied across the whole canvas at composite
+    // time. Storing it as a property rather than baked pixels is what lets it
+    // survive crop, rotate and canvas resize unchanged.
+    bool isBackground = false;
+    QColor backgroundColor = QColor(Qt::white);
 
     Layer() = default;
     Layer(const QString& n, const QImage& img, bool vis = true)
