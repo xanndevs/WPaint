@@ -11,6 +11,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QScrollArea>
+#include <QScrollBar>
 #include <QUndoStack>
 #include <QWheelEvent>
 
@@ -358,6 +359,31 @@ void CanvasView::zoomIn() { setZoom(m_zoom * 1.25); }
 void CanvasView::zoomOut() { setZoom(m_zoom / 1.25); }
 void CanvasView::zoomActual() { setZoom(1.0); }
 
+void CanvasView::zoomAt(const QPoint& widgetAnchor, qreal factor) {
+    // The image point currently under the cursor. Everything else here is about
+    // making this same point land back under the cursor afterwards.
+    const QPointF imagePt = toImage(widgetAnchor);
+    if (!m_scrollArea) { setZoom(m_zoom * factor); return; }
+
+    QScrollBar* hbar = m_scrollArea->horizontalScrollBar();
+    QScrollBar* vbar = m_scrollArea->verticalScrollBar();
+    const int oldH = hbar->value();
+    const int oldV = vbar->value();
+
+    setZoom(m_zoom * factor);
+
+    // setZoom() resized the widget and re-centred the origin, so the anchor
+    // now sits at a different widget position. Pin it back to the same viewport
+    // pixel. A widget point p appears on screen at (p - scroll), and the cursor
+    // was at (widgetAnchor - oldScroll), so:
+    //   after - newScroll == widgetAnchor - oldScroll
+    const QPointF after = fromImage(imagePt);
+    hbar->setValue(qBound(hbar->minimum(), qRound(after.x()) - widgetAnchor.x() + oldH,
+                          hbar->maximum()));
+    vbar->setValue(qBound(vbar->minimum(), qRound(after.y()) - widgetAnchor.y() + oldV,
+                          vbar->maximum()));
+}
+
 void CanvasView::zoomFit() {
     const QSize vp = m_scrollArea ? m_scrollArea->viewport()->size() : size();
     const QSize img = imageSize();
@@ -375,19 +401,34 @@ void CanvasView::zoomFit() {
 void CanvasView::updateViewSize() {
     const QSize img = imageSize();
     const QSize vp = m_scrollArea ? m_scrollArea->viewport()->size() : size();
-    const int needW = qCeil(img.width() * m_zoom) + 2 * kPad;
-    const int needH = qCeil(img.height() * m_zoom) + 2 * kPad;
+    // A viewport-sized margin on every side, on top of the usual padding. The
+    // scroll area clamps its scrollbars to [min,max], so the content can only
+    // be positioned within that range; without slack, zoomAt() cannot keep a
+    // point under the cursor when the cursor is nearer the top-left than the
+    // canvas margin allows, and the anchor visibly drifts. The margin
+    // guarantees every point can reach every viewport pixel, which is also how
+    // Photoshop behaves -- you can pan the canvas off-centre.
+    const int needW = qCeil(img.width() * m_zoom) + 2 * kPad + 2 * vp.width();
+    const int needH = qCeil(img.height() * m_zoom) + 2 * kPad + 2 * vp.height();
     const int w = qMax(needW, vp.width());
     const int h = qMax(needH, vp.height());
     setFixedSize(w, h);
     m_canvasOrigin = QPointF((w - img.width() * m_zoom) / 2.0,
                              (h - img.height() * m_zoom) / 2.0);
 
-    // Center the view when we opened or auto-fit.
+    // Center the view when we opened or auto-fit. Done by computing the
+    // offset rather than QScrollArea::ensureVisible(), which centres against
+    // whatever scroll range is current and so lands in the wrong place when the
+    // widget was just resized.
     if (m_scrollArea && m_autoFit) {
-        const QRect centered = QRect(QPoint(0, 0), QSize(qMax(w - vp.width(), 0),
-                                                         qMax(h - vp.height(), 0)));
-        m_scrollArea->ensureVisible(centered.width() / 2.0, centered.height() / 2.0);
+        QScrollBar* hbar = m_scrollArea->horizontalScrollBar();
+        QScrollBar* vbar = m_scrollArea->verticalScrollBar();
+        const QPointF centre = m_canvasOrigin + QPointF(img.width() * m_zoom,
+                                                        img.height() * m_zoom) / 2.0;
+        hbar->setValue(qBound(hbar->minimum(), qRound(centre.x() - vp.width() / 2.0),
+                              hbar->maximum()));
+        vbar->setValue(qBound(vbar->minimum(), qRound(centre.y() - vp.height() / 2.0),
+                              vbar->maximum()));
     }
 }
 
@@ -398,8 +439,13 @@ void CanvasView::resizeEvent(QResizeEvent* ev) {
 
 void CanvasView::wheelEvent(QWheelEvent* ev) {
     if (ev->modifiers() & Qt::ControlModifier) {
-        const bool in = ev->angleDelta().y() > 0;
-        if (in) zoomIn(); else zoomOut();
+        const int notches = ev->angleDelta().y();
+        if (notches == 0) { ev->accept(); return; }
+        // Smooth-ish per-notch response so a trackpad's many small deltas and a
+        // mouse wheel's coarse ones both feel continuous, then pin the point
+        // under the cursor.
+        const qreal steps = qBound(-4.0, qreal(notches) / 120.0, 4.0);
+        zoomAt(ev->position().toPoint(), std::pow(1.2, steps));
         ev->accept();
     } else {
         QWidget::wheelEvent(ev);

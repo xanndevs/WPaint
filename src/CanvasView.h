@@ -69,6 +69,11 @@ public:
     void zoomOut();
     void zoomActual();
     void zoomFit();
+    // Zoom by `factor` while keeping the image point under `widgetAnchor`
+    // (widget coordinates) pinned to that same screen position. This is what
+    // makes Ctrl+wheel behave like Photoshop: you steer the zoom with the
+    // cursor instead of always zooming about the canvas centre.
+    void zoomAt(const QPoint& widgetAnchor, qreal factor);
     void reflow() { updateViewSize(); } // re-center after viewport resize
     void attachScrollArea(QScrollArea* sa) { m_scrollArea = sa; reflow(); }
 
