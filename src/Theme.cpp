@@ -440,11 +440,18 @@ QDialog { background: %4; }
 #LayersList::item:selected:hover { background: %7; }
 #LayerRow { background: transparent; border-radius: %6; }
 #LayerRow:hover { background: %7; }
-#LayerRow[wpActive="true"] { background: %16; }
 #LayerName {
     color: %3; background: transparent; padding: 0 4px 0 0;
 }
+/* The active layer is a selection, so the row takes the accent fill and the
+   label the on-accent text -- pairing them is what Fluent does and stops the
+   hard black/white on a pale grey that read as a colour bug. Weight, not
+   colour, is what distinguishes the label. */
+#LayerRow[wpActive="true"] { background: %14; }
 #LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
+#LayerRow[wpActive="true"]:hover { background: %15; }
+/* On the accent row the eye must not pick up a pale hover patch. */
+#LayerRow[wpActive="true"] #LayerEyeBtn:hover { background: transparent; }
 #LayerEyeBtn, #LayerStripBtn {
     background: transparent; border: none; border-radius: %6;
     padding: 0; min-width: 0; min-height: 0;
@@ -507,9 +514,10 @@ QDialog { background: %4; }
 
 static const char* kTokenMarker = "#3b3b3b";
 
-QIcon icon(const QString& name, int px) {
+QIcon icon(const QString& name, int px, const QColor& tint) {
+    const QColor colour = tint.isValid() ? tint : tokens().icon;
     const QString key = name + QLatin1Char('|') + QString::number(px) +
-                        QLatin1Char('|') + tokens().icon.name();
+                        QLatin1Char('|') + colour.name();
     if (g_iconCache.contains(key))
         return g_iconCache.value(key);
 
@@ -517,7 +525,7 @@ QIcon icon(const QString& name, int px) {
     QIcon ic;
     if (f.open(QIODevice::ReadOnly)) {
         QString data = QString::fromUtf8(f.readAll());
-        data.replace(QLatin1String(kTokenMarker), tokens().icon.name());
+        data.replace(QLatin1String(kTokenMarker), colour.name());
         QSvgRenderer renderer(data.toUtf8());
         // Render at 2x for high-DPI crispness.
         QPixmap pm(QSize(px * 2, px * 2));

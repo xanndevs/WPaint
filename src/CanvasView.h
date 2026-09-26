@@ -167,6 +167,10 @@ signals:
     void boundaryResizePreview(const QRect& imageRect);
     void zoomChanged(qreal zoom);
     void colorPicked(const QColor& color, bool primary);
+    // A committed edit changed layer pixels. Structural changes already come
+    // through LayerStack::changed; the layers rail needs to hear about drawing
+    // too, or its thumbnails only refresh on resize/rotate/flip.
+    void pixelsChanged();
     // Right-click inside a selection. MainWindow owns the clipboard and the
     // transform entry points, so the menu is assembled there.
     void selectionContextRequested();

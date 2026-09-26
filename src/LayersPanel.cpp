@@ -35,6 +35,16 @@ QImage thumbFor(const QImage& img, const QSize& out) {
     return canvas;
 }
 
+QIcon backgroundSwatch(const QColor& color) {
+    QPixmap pm(66, 36);
+    pm.fill(color);
+    QPainter p(&pm);
+    p.setPen(QPen(Theme::tokens().canvasBorder, 1));
+    p.drawRect(pm.rect().adjusted(0, 0, -1, -1));
+    p.end();
+    return QIcon(pm);
+}
+
 } // namespace
 
 LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
@@ -116,6 +126,29 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
 
 void LayersPanel::refresh() { rebuildList(); }
 
+// Repaints the previews in place. Drawing only changes pixels, so there is no
+// reason to tear the rows down and rebuild them on every stroke -- that
+// discards the selection, the eye buttons and the hover state each time.
+void LayersPanel::updateThumbnails() {
+    for (int i = 0; i < m_list->count(); ++i) {
+        QWidget* row = m_list->itemWidget(m_list->item(i));
+        if (!row) continue;
+        const int index = row->property("layerIndex").toInt();
+        if (index < 0 || index >= m_stack->count()) continue;
+        const Layer& layer = m_stack->layerAt(index);
+        if (auto* swatch = row->findChild<QToolButton*>("LayerBackgroundSwatch")) {
+            if (layer.isBackground)
+                swatch->setIcon(backgroundSwatch(layer.backgroundColor));
+            continue;
+        }
+        if (auto* thumb = row->findChild<QLabel*>("LayerThumb")) {
+            if (!layer.isBackground)
+                thumb->setPixmap(QPixmap::fromImage(
+                    thumbFor(layer.image, QSize(64, 34))));
+        }
+    }
+}
+
 void LayersPanel::setActiveLayer(int index) {
     if (m_syncing) return;
     if (index >= 0 && index < m_list->count() && m_list->currentRow() != index)
@@ -154,12 +187,19 @@ void LayersPanel::rebuildList() {
         eye->setCheckable(true);
         eye->setChecked(layer.visible);
         eye->setToolTip(tr("Toggle layer visibility"));
-        const QIcon eyeIcon = Theme::icon("eye", 18);
-        const QIcon eyeOff = Theme::icon("eye-off", 18);
+        const bool isActive = i == m_stack->activeIndex();
+        const auto& tk = Theme::tokens();
+        const QColor eyeTint = isActive ? tk.iconOnAccent : tk.icon;
+        const QIcon eyeIcon = Theme::icon("eye", 18, eyeTint);
+        const QIcon eyeOff = Theme::icon("eye-off", 18, eyeTint);
         eye->setIcon(layer.visible ? eyeIcon : eyeOff);
         eye->setIconSize(QSize(18, 18));
         connect(eye, &QToolButton::clicked, this, [this, eye, i](bool on) {
-            eye->setIcon(on ? Theme::icon("eye", 18) : Theme::icon("eye-off", 18));
+            const bool isActive = i == m_stack->activeIndex();
+            const QColor tint = isActive ? Theme::tokens().iconOnAccent
+                                         : Theme::tokens().icon;
+            eye->setIcon(Theme::icon(on ? QStringLiteral("eye")
+                                        : QStringLiteral("eye-off"), 18, tint));
             emit visibilityRequested(i, on);
         });
 
@@ -168,16 +208,10 @@ void LayersPanel::rebuildList() {
             // A flat swatch of the backdrop colour, clickable to recolour it.
             auto* swatch = new QToolButton(row);
             swatch->setObjectName("LayerBackgroundSwatch");
+            swatch->setProperty("layerIndex", i);
             swatch->setFixedSize(66, 36);
             swatch->setToolTip(tr("Change background color"));
-            const auto& tk = Theme::tokens();
-            QPixmap pm(66, 36);
-            pm.fill(layer.backgroundColor);
-            QPainter sp(&pm);
-            sp.setPen(QPen(tk.canvasBorder, 1));
-            sp.drawRect(pm.rect().adjusted(0, 0, -1, -1));
-            sp.end();
-            swatch->setIcon(QIcon(pm));
+            swatch->setIcon(backgroundSwatch(layer.backgroundColor));
             swatch->setIconSize(QSize(66, 36));
             const int index = i;
             connect(swatch, &QToolButton::clicked, this,
@@ -185,6 +219,8 @@ void LayersPanel::rebuildList() {
             thumbLayout->addWidget(swatch);
         } else {
             auto* thumb = new QLabel(row);
+            thumb->setObjectName("LayerThumb");
+            thumb->setProperty("layerIndex", i);
             thumb->setPixmap(QPixmap::fromImage(
                 thumbFor(layer.image, QSize(64, 34))));
             thumb->setFixedSize(66, 36);
@@ -213,12 +249,21 @@ void LayersPanel::rebuildList() {
 }
 
 void LayersPanel::applyActiveProperty(int activeRow) {
+    const auto& t = Theme::tokens();
     for (int i = 0; i < m_list->count(); ++i) {
         QWidget* rowWidget = m_list->itemWidget(m_list->item(i));
         if (!rowWidget) continue;
-        rowWidget->setProperty("wpActive", i == activeRow);
+        const bool active = i == activeRow;
+        rowWidget->setProperty("wpActive", active);
         rowWidget->style()->unpolish(rowWidget);
         rowWidget->style()->polish(rowWidget);
+        // The active row is filled with the accent, so its eye glyph has to
+        // follow to the on-accent colour or it reads as a dark smudge.
+        for (QToolButton* eye : rowWidget->findChildren<QToolButton*>("LayerEyeBtn")) {
+            eye->setIcon(Theme::icon(eye->isChecked() ? QStringLiteral("eye")
+                                                       : QStringLiteral("eye-off"),
+                                      18, active ? t.iconOnAccent : t.icon));
+        }
     }
 }
 

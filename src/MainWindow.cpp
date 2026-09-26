@@ -332,6 +332,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
             &MainWindow::renameLayer);
     connect(m_layersPanel, &LayersPanel::backgroundEditRequested, this,
             &MainWindow::editBackgroundColor);
+    // Keep the thumbnails in step with drawing. LayerStack::changed only fires
+    // for structural edits, so without this a layer preview would not update
+    // until something resized, rotated or flipped the document.
+    connect(m_canvas, &CanvasView::pixelsChanged, m_layersPanel, &LayersPanel::updateThumbnails);
 
     selectTool(ToolId::Pencil);
     syncStatusSize();

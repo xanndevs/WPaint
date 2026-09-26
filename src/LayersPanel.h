@@ -16,6 +16,9 @@ public:
     explicit LayersPanel(LayerStack* stack, QWidget* parent = nullptr);
 
     void refresh();
+    // Repaint just the previews; cheaper than a full rebuild and keeps the
+    // selection, eye buttons and hover state intact.
+    void updateThumbnails();
     void setActiveLayer(int index);
 
     // The caption strip holding the title, the layer count and the add/remove

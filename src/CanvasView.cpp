@@ -698,8 +698,10 @@ void CanvasView::commitEdit(const QString& text) {
     }
     m_sessionBefore.clear();
     m_sessionDirty.clear();
-    if (!patches.isEmpty())
+    if (!patches.isEmpty()) {
         m_undo->push(Commands::makePaint(m_stack, patches, text));
+        emit pixelsChanged();
+    }
     update();
 }
 

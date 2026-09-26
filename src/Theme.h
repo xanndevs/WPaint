@@ -108,8 +108,10 @@ void setModeChangedCallback(ModeChangedCallback cb);
 QString stylesheet(const Tokens& t);
 
 // Icon provider: loads :/assets/icons/<name>.svg, tints the token marker
-// color to the active icon color, caches results.
-QIcon icon(const QString& name, int px = 20);
+// color to the active icon color, caches results. Pass an explicit tint when
+// the glyph has to sit on something other than the default surface -- e.g. on
+// an accent-filled row, where the normal icon color would disappear.
+QIcon icon(const QString& name, int px = 20, const QColor& tint = QColor());
 void clearIconCache();
 
 // Call after a theme change: re-tints every button tagged with wpIconName.
