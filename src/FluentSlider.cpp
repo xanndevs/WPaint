@@ -128,13 +128,19 @@ void FluentSlider::paintEvent(QPaintEvent*) {
     p.drawRoundedRect(track, radius, radius);
 
     const QColor accent = enabled ? t.accent : t.textTertiary;
+    // The filled sub-page runs from the start of the track to the thumb. A
+    // vertical slider starts at the bottom, so the fill is anchored there and
+    // grows upward. Anchoring it to the top as the horizontal case does put the
+    // accent on the wrong half: the slider then reads completely filled at its
+    // minimum and empty at its maximum.
     QRect sub;
-    if (vertical)
-        sub = QRect(track.left(), track.top(), track.width(),
-                    qBound(groove, pos, travel));
-    else
+    if (vertical) {
+        const int y = qMin(track.top() + pos, track.bottom() - groove + 1);
+        sub = QRect(track.left(), y, track.width(), track.bottom() - y + 1);
+    } else {
         sub = QRect(track.left(), track.top(),
                     qBound(groove, pos, travel), track.height());
+    }
     p.setBrush(accent);
     p.drawRoundedRect(sub, radius, radius);
 
