@@ -1174,6 +1174,10 @@ void MainWindow::doCut() {
     m_copied = m_canvas->copySelection();
     m_copiedTopLeft = m_canvas->selection().topLeft();
     QGuiApplication::clipboard()->setImage(m_copied);
+    // Drop the floating overlay too. liftSelection erases the pixels but keeps
+    // them floating at the same spot, so without this the cut is visually
+    // indistinguishable from a copy -- the region just gets redrawn.
+    m_canvas->commitFloatingRemoval(tr("Cut selection"));
     updateEditActions();
 }
 
@@ -1232,8 +1236,12 @@ void MainWindow::doDelete() {
 void MainWindow::runLayerCommand(const QString& text, std::function<void()> mutate) {
     m_canvas->bakeActiveObject();
     const QList<Layer> before = m_stack->layers();
+    // Sample the active index before the mutation: addLayer() moves it to the
+    // new top layer, so reading it afterwards would restore the wrong layer as
+    // active when this command is undone.
+    const int beforeActive = m_stack->activeIndex();
     mutate();
-    m_undo->push(Commands::makeLayerList(m_stack, before, text));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, text));
 }
 
 void MainWindow::addLayer() {

@@ -517,6 +517,17 @@ void CanvasView::cancelFloatingLift() { cancelFloating(); }
 
 void CanvasView::commitFloatingRemoval(const QString& text) {
     if (!m_floatingActive) return;
+    // A lift already opened an edit session and erased the region, so close
+    // that one instead of beginning a second erase. The re-erase would be a
+    // no-op that commitEdit discards, but it would still split the cut into
+    // two undo entries -- the first mislabelled "Draw".
+    if (m_sessionOpen) {
+        m_floatingActive = false;
+        m_floating = QImage();
+        commitEdit(text);
+        update();
+        return;
+    }
     const QRect r = QRect(m_floatingPos.toPoint(), m_floating.size());
     m_floatingActive = false;
     m_floating = QImage();
@@ -672,6 +683,7 @@ void CanvasView::cropTo(const QRectF& imageRect) {
     clearSelection();
     if (r == QRect(QPoint(0, 0), imageSize())) return;
     const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
@@ -679,7 +691,7 @@ void CanvasView::cropTo(const QRectF& imageRect) {
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
-    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Crop")));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Crop")));
 }
 
 void CanvasView::setCanvasSize(const QSize& size) {
@@ -688,8 +700,9 @@ void CanvasView::setCanvasSize(const QSize& size) {
     if (m_floatingActive) weldFloating();
     clearSelection();
     const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
     m_stack->setSize(size);
-    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Resize canvas")));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Resize canvas")));
 }
 
 void CanvasView::rotateCanvas(qreal degrees) {
@@ -697,6 +710,7 @@ void CanvasView::rotateCanvas(qreal degrees) {
     if (m_floatingActive) weldFloating();
     clearSelection();
     const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
@@ -704,7 +718,7 @@ void CanvasView::rotateCanvas(qreal degrees) {
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
-    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Rotate canvas")));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Rotate canvas")));
 }
 
 void CanvasView::flipCanvas(Qt::Orientation orientation) {
@@ -712,6 +726,7 @@ void CanvasView::flipCanvas(Qt::Orientation orientation) {
     if (m_floatingActive) weldFloating();
     clearSelection();
     const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         Layer l = m_stack->layerAt(i);
@@ -719,7 +734,7 @@ void CanvasView::flipCanvas(Qt::Orientation orientation) {
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
-    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Flip horizontal")));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Flip horizontal")));
 }
 
 void CanvasView::rotateSelection(qreal degrees) {
@@ -1054,6 +1069,7 @@ void CanvasView::applyBoundaryResize(const QRect& r) {
     clearSelection();
     const QSize newSize(r.width(), r.height());
     const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
     QList<Layer> after;
     for (int i = 0; i < m_stack->count(); ++i) {
         const Layer& src = m_stack->layerAt(i);
@@ -1067,7 +1083,7 @@ void CanvasView::applyBoundaryResize(const QRect& r) {
         after << l;
     }
     m_stack->replaceAll(after, m_stack->activeIndex());
-    m_undo->push(Commands::makeLayerList(m_stack, before, tr("Resize canvas")));
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Resize canvas")));
 }
 
 // ------------------------------------------------------------ painting ---

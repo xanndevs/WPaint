@@ -72,9 +72,9 @@ QUndoCommand* makePaint(LayerStack* stack, const QVector<PaintPatch>& patches,
 }
 
 QUndoCommand* makeLayerList(LayerStack* stack, const QList<Layer>& before,
-                            const QString& text) {
-    return new LayerListCommand(stack, before, stack->layers(),
-                                stack->activeIndex(), stack->activeIndex(), text);
+                            int beforeActive, const QString& text) {
+    return new LayerListCommand(stack, before, stack->layers(), beforeActive,
+                                stack->activeIndex(), text);
 }
 
 } // namespace Commands

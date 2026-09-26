@@ -28,8 +28,10 @@ QUndoCommand* makePaint(LayerStack* stack, const QVector<PaintPatch>& patches,
 
 // Structural change: add/remove/reorder/rename/visibility of layers, canvas
 // resize or crop, etc. Captures the full layer list (cheap thanks to QImage
-// implicit sharing) before and after the caller's mutation.
+// implicit sharing) before and after the caller's mutation. The active index
+// is sampled either side of the mutation, so callers must invoke this
+// factory *after* mutating.
 QUndoCommand* makeLayerList(LayerStack* stack, const QList<Layer>& before,
-                            const QString& text);
+                            int beforeActive, const QString& text);
 
 } // namespace Commands
