@@ -170,10 +170,15 @@ protected:
     void mouseReleaseEvent(QMouseEvent* ev) override;
     void mouseDoubleClickEvent(QMouseEvent* ev) override;
     void keyPressEvent(QKeyEvent* ev) override;
+    void keyReleaseEvent(QKeyEvent* ev) override;
     void wheelEvent(QWheelEvent* ev) override;
 
 private:
     void updateViewSize();
+    bool handleArrowKey(QKeyEvent* ev);
+    bool nudgeBy(const QPoint& delta);
+    void sketchTo(const QPointF& imagePt);
+    void endSketch();
     void drawWorkspace(QPainter& p);
     void drawSelectionOverlay(QPainter& p);
     void drawSelectionHandles(QPainter& p);
@@ -262,6 +267,14 @@ private:
     bool m_selectionDirty = false;
     int m_dashOffset = 0;
     QTimer m_antsTimer;
+
+    // Keyboard: Space + arrows is an Etch-A-Sketch cursor that extends one
+    // edit session for as long as Space is held. Plain/Shift arrows nudge the
+    // live shape, the floating selection or the marquee by 1/10 image px.
+    bool m_spaceDown = false;
+    bool m_sketching = false;
+    QPointF m_sketchLast;
+    QPointF m_lastWidget;
 
     QString m_pendingStatus;
 };

@@ -912,6 +912,7 @@ void CanvasView::mousePressEvent(QMouseEvent* ev) {
 }
 
 void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
+    m_lastWidget = ev->position();
     if (m_objectDragging) {
         updateObjectDrag(ev->position(), ev->modifiers() & Qt::AltModifier);
         ev->accept();
@@ -986,12 +987,140 @@ void CanvasView::mouseDoubleClickEvent(QMouseEvent* ev) {
     }
 }
 
+// Maps an arrow key to a 1px step, or 10px with Shift held.
+static bool arrowDelta(QKeyEvent* ev, QPoint& out) {
+    switch (ev->key()) {
+    case Qt::Key_Left:  out = QPoint(-1, 0); break;
+    case Qt::Key_Right: out = QPoint(1, 0); break;
+    case Qt::Key_Up:    out = QPoint(0, -1); break;
+    case Qt::Key_Down:  out = QPoint(0, 1); break;
+    default: return false;
+    }
+    if (ev->modifiers() & Qt::ShiftModifier)
+        out *= 10;
+    return true;
+}
+
 void CanvasView::keyPressEvent(QKeyEvent* ev) {
     if (m_tool) {
         m_tool->keyPress(this, ev);
         if (ev->isAccepted()) return;
     }
+    // Space alone only arms the sketch cursor. It must be consumed either way
+    // or the enclosing QScrollArea treats it as a page-scroll.
+    if (ev->key() == Qt::Key_Space && !ev->isAutoRepeat()) {
+        m_spaceDown = true;
+        ev->accept();
+        return;
+    }
+    if (handleArrowKey(ev))
+        return;
     QWidget::keyPressEvent(ev);
+}
+
+// Arrow keys nudge the live object, the floating selection or the marquee.
+// With Space held they instead extend a sketch stroke on the active layer.
+bool CanvasView::handleArrowKey(QKeyEvent* ev) {
+    QPoint step;
+    if (!arrowDelta(ev, step)) return false;
+
+    if (m_spaceDown) {
+        if (m_sketching)
+            sketchTo(m_sketchLast + QPointF(step));
+        else
+            sketchTo(toImage(m_lastWidget) + QPointF(step));
+        ev->accept();
+        return true;
+    }
+
+    if (!nudgeBy(step)) return false;
+    ev->accept();
+    return true;
+}
+
+bool CanvasView::nudgeBy(const QPoint& delta) {
+    if (m_hasObject) {
+        m_object.rect.translate(delta);
+        m_object.a += QPointF(delta);
+        m_object.b += QPointF(delta);
+        m_object.c1 += QPointF(delta);
+        m_object.c2 += QPointF(delta);
+        m_objectOrig = m_object;
+        update();
+        return true;
+    }
+    if (m_floatingActive) {
+        // Match the drag clamp: keep at least one pixel of the floating
+        // selection overlapping the canvas.
+        const QSize img = imageSize();
+        QPointF pos = m_floatingPos + QPointF(delta);
+        pos.setX(qBound<qreal>(-m_floating.width() + 1, pos.x(), img.width()));
+        pos.setY(qBound<qreal>(-m_floating.height() + 1, pos.y(), img.height()));
+        if (pos == m_floatingPos) return false;
+        m_floatingPos = pos;
+        m_selection = QRectF(pos, QSizeF(m_floating.size()));
+        update();
+        return true;
+    }
+    if (m_hasSelection) {
+        const QRectF r =
+            (m_selection.translated(delta))
+                .intersected(QRectF(QPointF(0, 0), QSizeF(imageSize())));
+        if (r.isEmpty()) return false;
+        setSelection(r);
+        update();
+        return true;
+    }
+    return false;
+}
+
+void CanvasView::sketchTo(const QPointF& imagePt) {
+    const QPointF target(
+        qBound<qreal>(0, imagePt.x(), imageSize().width()),
+        qBound<qreal>(0, imagePt.y(), imageSize().height()));
+    if (!m_sketching) {
+        if (m_floatingActive) weldFloating();
+        m_sketching = true;
+        m_sketchLast = target;
+        beginEdit(activeLayerIndex());
+        return;
+    }
+    if (target == m_sketchLast) return;
+
+    const int w = qMax(1, m_brushSize);
+    QPainter p(&layerImage(activeLayerIndex()));
+    p.setRenderHint(QPainter::Antialiasing, true);
+    QPen pen(m_primary);
+    pen.setWidth(w);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    p.setPen(pen);
+    p.drawLine(m_sketchLast, target);
+
+    const int pad = w / 2 + 2;
+    const QRect dirty = QRectF(m_sketchLast, target).normalized()
+                            .adjusted(-pad, -pad, pad, pad)
+                            .toAlignedRect()
+                            .intersected(QRect(QPoint(0, 0), imageSize()));
+    markDirty(activeLayerIndex(), dirty);
+    m_sketchLast = target;
+    update();
+}
+
+void CanvasView::endSketch() {
+    if (!m_sketching) return;
+    m_sketching = false;
+    commitEdit(tr("Sketch"));
+}
+
+void CanvasView::keyReleaseEvent(QKeyEvent* ev) {
+    if (ev->key() == Qt::Key_Space && !ev->isAutoRepeat()) {
+        m_spaceDown = false;
+        endSketch();
+        ev->accept();
+        return;
+    }
+    QWidget::keyReleaseEvent(ev);
 }
 
 // ------------------------------------------------- boundary resize ------
