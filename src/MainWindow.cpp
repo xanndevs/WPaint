@@ -28,6 +28,7 @@
 #include <QInputDialog>
 #include <QKeySequence>
 #include <QLabel>
+#include <QContextMenuEvent>
 #include <QCursor>
 #include <QMenu>
 #include <QMenuBar>
@@ -113,16 +114,26 @@ QIcon renderedIcon(const QString& svgName, int px) {
     return ic;
 }
 
-// A gallery button with two stacked targets: the body picks the tool, the
-// chevron strip at the bottom opens the menu. Qt's own MenuButtonPopup splits
-// left/right, which put the dropdown on a thin right-hand sliver and read as
-// two buttons sitting side by side; the caret is painted here as well because
-// the QSS "menu-indicator" sub-control has no cross-axis room and squashed the
-// chevron into a bar. Size is left to the caller -- the cluster gives these
-// buttons a fixed box and the painting fits inside it.
+// A gallery button drawn as two stacked pieces inside one box: the body picks
+// the tool, the chevron strip along the bottom opens the menu. Qt's own
+// MenuButtonPopup splits left/right, which put the dropdown on a thin right-hand
+// sliver and read as two unrelated buttons side by side. The outer size is
+// fixed by the cluster and does not change -- only how the box divides.
+//
+// The accent fill covers the whole button when the tool is active; hover
+// highlights just the piece under the pointer, so the two targets stay
+// distinguishable without the fill ever looking partial.
 class PopupButton : public QToolButton {
 public:
     using QToolButton::QToolButton;
+
+    PopupButton() {
+        setContextMenuPolicy(Qt::NoContextMenu);
+        // The checked state drives both the fill and the icon colour, and it
+        // flips at runtime, so the icon has to be re-tinted here rather than
+        // only at theme-change time.
+        connect(this, &QToolButton::toggled, this, [this] { Theme::refreshIcon(this); });
+    }
 
     // Height of the dropdown strip along the bottom edge.
     int caretBand() const {
@@ -132,7 +143,6 @@ public:
 protected:
     void mousePressEvent(QMouseEvent* ev) override {
         if (ev->button() == Qt::LeftButton && isMenuBand(ev->position().toPoint())) {
-            // Caret strip: open the gallery without touching the tool selection.
             if (QMenu* m = menu()) {
                 m->popup(mapToGlobal(QPoint(width() / 2, height())));
                 ev->accept();
@@ -151,25 +161,60 @@ protected:
     }
 
     void mouseMoveEvent(QMouseEvent* ev) override {
-        // Once the press started in the body, keep treating it as a body press
-        // even if the pointer slides onto the caret.
         if (isDown()) {
-            setChecked(isChecked());
             ev->accept();
             return;
+        }
+        // Remember which piece the pointer is over so the hover can light only
+        // that one.
+        const bool inMenu = isMenuBand(ev->position().toPoint());
+        if (inMenu != m_hoverMenu) {
+            m_hoverMenu = inMenu;
+            setCursor(inMenu ? Qt::PointingHandCursor
+                             : (menu() ? Qt::PointingHandCursor : Qt::ArrowCursor));
+            update();
         }
         QToolButton::mouseMoveEvent(ev);
     }
 
+    void leaveEvent(QEvent* ev) override {
+        m_hoverMenu = false;
+        QToolButton::leaveEvent(ev);
+        update();
+    }
+
     void paintEvent(QPaintEvent* e) override {
         QToolButton::paintEvent(e);
-        if (!menu()) return;
-        const int caret = 12;
-        const QPixmap pm = Theme::icon("chevron-down", caret)
-                               .pixmap(caret, caret, QIcon::Normal, QIcon::Off);
-        if (pm.isNull()) return;
+        const auto& t = Theme::tokens();
+        const int band = caretBand();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
+
+        // Hover lights only the piece under the pointer. When the tool is active
+        // the whole button is already accent, so the highlight is a lighter
+        // accent rather than the neutral hover fill.
+        if (m_hoverMenu) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(isChecked() ? t.accentHover : t.controlHover);
+            p.drawRoundedRect(QRectF(0, height() - band, width(), band), 4, 4);
+        } else if (hovered() && menu()) {
+            p.setPen(Qt::NoPen);
+            p.setBrush(isChecked() ? t.accentHover : t.controlHover);
+            p.drawRoundedRect(QRectF(0, 0, width(), height() - band), 4, 4);
+        }
+
+        // Hairline between the pieces, so the division is visible at rest too.
+        if (menu()) {
+            p.setPen(QPen(isChecked() ? t.accentHover : t.divider, 1));
+            p.drawLine(QPoint(4, height() - band), QPoint(width() - 4, height() - band));
+        }
+
+        if (!menu()) return;
+        const int caret = 12;
+        const QPixmap pm = Theme::icon("chevron-down", caret, isChecked() ? t.iconOnAccent
+                                                                        : t.icon)
+                               .pixmap(caret, caret, QIcon::Normal, QIcon::Off);
+        if (pm.isNull()) return;
         p.drawPixmap((width() - caret) / 2, height() - caret - 1, pm);
     }
 
@@ -177,6 +222,8 @@ private:
     bool isMenuBand(const QPoint& p) const {
         return p.y() >= height() - caretBand();
     }
+    bool hovered() const { return underMouse(); }
+    bool m_hoverMenu = false;
 };
 
 } // namespace
@@ -679,11 +726,16 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         m_shapeButton->setObjectName("MenuButtonPopup");
         m_shapeButton->setProperty("wpBig", 1);
         m_shapeButton->setCheckable(true);
-        m_shapeButton->setPopupMode(QToolButton::InstantPopup);
+        // The body re-activates the current shape; only the chevron strip opens
+        // the gallery, which PopupButton handles from the pointer position.
+        m_shapeButton->setPopupMode(QToolButton::DelayedPopup);
         m_shapeButton->setToolTip(tr("Shapes"));
         m_shapeButton->setFixedSize(big, big);
         Theme::setIcon(m_shapeButton, "shape-rect", iconPx);
         m_shapeButton->setIconSize(QSize(iconPx, iconPx));
+        connect(m_shapeButton, &QToolButton::clicked, this, [this] {
+            selectTool(m_canvas->currentShape());
+        });
         QMenu* shapeMenu = new QMenu(m_shapeButton);
         QActionGroup* grp = new QActionGroup(shapeMenu);
         grp->setExclusive(true);
@@ -693,7 +745,10 @@ auto* selBtn = toolButtonFor(ToolId::Select);
             grp->addAction(a);
             const ToolId id = s.id;
             connect(a, &QAction::triggered, this, [this, id, a, iconPx] {
-                m_shapeButton->setIcon(Theme::icon(ToolRegistry::spec(id).icon, iconPx));
+                // Through Theme::setIcon, not setIcon: the property is what the
+                // checked-state re-tint reads, so bypassing it left the button
+                // showing the previous shape after the next repaint.
+                Theme::setIcon(m_shapeButton, ToolRegistry::spec(id).icon, iconPx);
                 applyShape(static_cast<ShapeKit::Shape>(id));
                 selectTool(id);
                 a->setChecked(true);
@@ -796,13 +851,16 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         const int iconPx = 2 * 20;
         layersToggle->setToolTip(tr("Show layers panel"));
         layersToggle->setCheckable(true);
-        layersToggle->setChecked(true);
         layersToggle->setProperty("wpBig", 1);
+        layersToggle->setContextMenuPolicy(Qt::NoContextMenu);
+        connect(layersToggle, &QToolButton::toggled, this,
+                [layersToggle](bool) { Theme::refreshIcon(layersToggle); });
 
         layersToggle->sizePolicy().setHorizontalPolicy(QSizePolicy::Fixed);
         layersToggle->setFixedSize(big, big);
         Theme::setIcon(layersToggle, "layer-stack", iconPx);
         layersToggle->setIconSize(QSize(iconPx, iconPx));
+        layersToggle->setChecked(true);
 
         connect(layersToggle, &QToolButton::toggled, this, [this](bool on) {
             m_layersDock->setVisible(on);
@@ -899,6 +957,10 @@ QToolButton* MainWindow::toolButtonFor(ToolId id, int size) {
         b->setFixedSize(size, size);
     }
     Theme::setIcon(b, s.icon);
+    b->setContextMenuPolicy(Qt::NoContextMenu);
+    // Re-tint whenever the checked state flips, so the glyph follows the
+    // accent fill immediately rather than only on the next theme change.
+    connect(b, &QToolButton::toggled, this, [b] { Theme::refreshIcon(b); });
     connect(b, &QToolButton::clicked, this, [this, id] { selectTool(id); });
     m_toolButtons.insert(id, b);
     return b;
@@ -949,6 +1011,13 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
         ev->type() == QEvent::Resize)
         placeSizePanel();
     return QMainWindow::eventFilter(watched, ev);
+}
+
+void MainWindow::contextMenuEvent(QContextMenuEvent* ev) {
+    // The canvas raises its own selection menu and handles that event itself.
+    // Anything reaching the window is the stock widget/dock list, which offers
+    // nothing useful, so it is dropped rather than shown.
+    ev->ignore();
 }
 
 void MainWindow::resizeEvent(QResizeEvent* ev) {
@@ -1036,8 +1105,14 @@ void MainWindow::selectTool(ToolId id) {
 
 void MainWindow::syncToolButtons() {
     const ToolId id = m_canvas->tool() ? m_canvas->tool()->id() : ToolId::Select;
-    for (auto it = m_toolButtons.constBegin(); it != m_toolButtons.constEnd(); ++it)
-        it.value()->setChecked(it.key() == id);
+    for (auto it = m_toolButtons.constBegin(); it != m_toolButtons.constEnd(); ++it) {
+        QToolButton* b = it.value();
+        b->setChecked(it.key() == id);
+        // A checked tool button sits on the accent fill, so its glyph has to
+        // switch to the on-accent colour or it stays dark-on-blue and reads as
+        // "nothing happened". This runs for every tool, not just the galleries.
+        Theme::refreshIcon(b);
+    }
     // The brush and shape galleries are not in m_toolButtons (they are split
     // buttons that pick a family, not a single tool), so they are synced by
     // hand. Both go accent while their family owns the tool, so it is obvious

@@ -14,6 +14,7 @@ class QAction;
 class QCloseEvent;
 class QDockWidget;
 class QEnterEvent;
+class QContextMenuEvent;
 class QEvent;
 class QLabel;
 class QMouseEvent;
@@ -85,6 +86,11 @@ public:
 protected:
     void closeEvent(QCloseEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
+    // QMainWindow's default context menu is the stock widget/dock list, which
+    // pops a bare "Layers" entry over the toolbar on any right-click nothing
+    // else claimed. The canvas has its own selection menu, so this is only ever
+    // noise -- swallow it here.
+    void contextMenuEvent(QContextMenuEvent* ev) override;
 
 private:
     // construction
