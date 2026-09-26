@@ -537,8 +537,12 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         });
         c << rotR;
 
-        bar->addWidget(toolCluster(tr("Image"), c));
-
+        // The resize button belongs to the Image cluster rather than a cluster
+        // of its own: splitting it off left the "Image" caption centred over
+        // only the four small buttons, with the resize button hanging outside
+        // the text. Keeping it here lets the caption centre over the whole
+        // group, and the grid already gives a wpBig control a column of its
+        // own spanning both rows.
         auto* resizeBtn = new QToolButton(this);
         const int big = 2 * Theme::tokens().toolbarBtn;
         const int iconPx = 2 * 20;
@@ -549,7 +553,9 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         resizeBtn->setIconSize(QSize(iconPx, iconPx));
         connect(resizeBtn, &QToolButton::clicked, this,
                 [this] { openResizeDialog(); });
-        bar->addWidget(toolCluster(QString(), {resizeBtn}));
+        c << resizeBtn;
+
+        bar->addWidget(toolCluster(tr("Image"), c));
     }
     bar->addWidget(divider());
 
