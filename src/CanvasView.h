@@ -77,6 +77,10 @@ public:
     void reflow() { updateViewSize(); } // re-center after viewport resize
     void attachScrollArea(QScrollArea* sa) { m_scrollArea = sa; reflow(); }
 
+    // Middle-drag panning: moves the document under the viewport without
+    // touching the image, which is why it is not an edit and not undoable.
+    bool isPanning() const { return m_panning; }
+
     // ---- selection (image coords, normalized & clamped) ----
     bool hasSelection() const { return m_hasSelection; }
     QRectF selection() const { return m_selection; }
@@ -192,6 +196,9 @@ protected:
 private:
     void updateViewSize();
     void applyZoom(qreal z, bool snap);
+    void beginPan(const QPointF& widgetPos);
+    void panTo(const QPointF& widgetPos);
+    void endPan();
     bool handleArrowKey(QKeyEvent* ev);
     bool nudgeBy(const QPoint& delta);
     void sketchTo(const QPointF& imagePt);
@@ -236,6 +243,10 @@ private:
     qreal m_zoom = 1.0;
     bool m_autoFit = true;
     QPointF m_canvasOrigin;
+
+    // middle-button pan (viewport scrolling, not an edit)
+    bool m_panning = false;
+    QPointF m_panAnchor;
 
     // selection / floating state (image coords)
     QRectF m_selection;

@@ -412,6 +412,43 @@ void CanvasView::zoomAt(const QPoint& widgetAnchor, qreal factor) {
                           vbar->maximum()));
 }
 
+// Middle-drag pans by scrolling the viewport, the same motion the scroll bars
+// and the wheel do: the document itself never moves. The anchor is tracked in
+// *global* coordinates on purpose -- CanvasView is the scroll area's widget, so
+// scrolling slides the widget itself under a stationary cursor, and a widget-
+// space anchor would report the scroll-back as extra cursor travel and run away
+// over a long drag. A widget point p is drawn at (p - scroll), so dragging the
+// cursor by dx means decreasing the horizontal scroll value by dx.
+void CanvasView::beginPan(const QPointF& widgetPos) {
+    m_panning = true;
+    m_panAnchor = mapToGlobal(widgetPos);
+    setCursor(Qt::ClosedHandCursor);
+}
+
+void CanvasView::panTo(const QPointF& widgetPos) {
+    if (!m_panning) return;
+    const QPointF global = mapToGlobal(widgetPos);
+    const QPointF delta = global - m_panAnchor;
+    m_panAnchor = global;
+    if (!m_scrollArea || delta.isNull()) return;
+    QScrollBar* hbar = m_scrollArea->horizontalScrollBar();
+    QScrollBar* vbar = m_scrollArea->verticalScrollBar();
+    if (hbar->maximum() > hbar->minimum()) {
+        hbar->setValue(qBound(hbar->minimum(), hbar->value() - qRound(delta.x()),
+                              hbar->maximum()));
+    }
+    if (vbar->maximum() > vbar->minimum()) {
+        vbar->setValue(qBound(vbar->minimum(), vbar->value() - qRound(delta.y()),
+                              vbar->maximum()));
+    }
+}
+
+void CanvasView::endPan() {
+    if (!m_panning) return;
+    m_panning = false;
+    setCursor(Qt::ArrowCursor);
+}
+
 void CanvasView::zoomFit() {
     const QSize vp = m_scrollArea ? m_scrollArea->viewport()->size() : size();
     const QSize img = imageSize();
@@ -942,6 +979,13 @@ void CanvasView::mousePressEvent(QMouseEvent* ev) {
     if (m_boundaryResize) finishBoundaryResize();
     if (m_selResizing) finishSelectionResize();
     if (m_objectDragging) finishObjectDrag();
+    // The middle button pans, so it belongs to the viewport rather than to
+    // whatever tool is active, and it must not cancel a tool gesture either.
+    if (ev->button() == Qt::MiddleButton) {
+        beginPan(ev->position());
+        ev->accept();
+        return;
+    }
     // Pressing the other button abandons a gesture already in progress, so
     // right-dragging a shape and then clicking left throws the shape away, and
     // the same works in reverse for a right-button stroke. This is a local
@@ -1008,6 +1052,11 @@ void CanvasView::mousePressEvent(QMouseEvent* ev) {
 
 void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
     m_lastWidget = ev->position();
+    if (m_panning) {
+        panTo(ev->position());
+        ev->accept();
+        return;
+    }
     if (m_objectDragging) {
         updateObjectDrag(ev->position(), ev->modifiers() & Qt::AltModifier);
         ev->accept();
@@ -1053,6 +1102,12 @@ void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
 }
 
 void CanvasView::mouseReleaseEvent(QMouseEvent* ev) {
+    if (m_panning) {
+        if (ev->button() == Qt::MiddleButton)
+            endPan();
+        ev->accept();
+        return;
+    }
     if (m_objectDragging) {
         finishObjectDrag();
         ev->accept();
