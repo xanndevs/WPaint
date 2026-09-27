@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Layer.h"
 #include "Tool.h"
 
 #include <QColor>
@@ -9,6 +10,16 @@
 #include <QVariant>
 #include <QVector>
 #include <functional>
+
+// Where a new layer or a new group goes is NewLayerPlacement, in Layer.h: it is
+// a rule about the shape of the stack, and the stack has to know it.
+//
+// What dropping an image onto a canvas that has never been touched does. On a
+// canvas that has, the shell asks instead -- see FileDropDialog.
+enum class FileDropAction {
+    OpenAsNew = 0,     // open the file as the document
+    PlaceToCanvas = 1, // drop it into the canvas that is already there
+};
 
 // User settings that outlive the session. The whole surface is one struct plus
 // one table (see Settings.cpp), so a new setting is a field, a table row and a
@@ -52,10 +63,27 @@ struct SettingsValues {
 
     // ---- files ----
     bool confirmDiscard = true;
+    FileDropAction fileDropAction = FileDropAction::PlaceToCanvas;
 
     // ---- layers ----
     // 0 = Fast (nearest, correct for pixel art), 1 = Smooth.
     int thumbnailQuality = 0;
+
+    // Where a new layer or group goes. Stored as the value itself rather than
+    // the index of a combo entry for the same reason defaultShape is: the
+    // display order is a presentation choice.
+    //
+    // The default is AboveSelected, which is where a new layer has always gone
+    // in every other image editor, and the rail's Add button puts it there. What
+    // used to happen instead -- always the top of the document, whatever was
+    // selected -- is still available as AboveAll.
+    NewLayerPlacement newLayerPlacement = NewLayerPlacement::AboveSelected;
+    // Only meaningful for the two "all layers" placements, and only then because
+    // they are the two that would otherwise drop the layer out of the group the
+    // user was working in. Above it is the top of *its* group; below it, the
+    // bottom of it. With AboveSelected or BelowSelected there is nothing to say:
+    // the layer is going where the selected layer already is.
+    bool newLayersStayInGroup = false;
 
     // ---- defaults for a new document ----
     // The ToolId of the shape a new document starts with, not its position in
@@ -103,7 +131,10 @@ bool smoothText();
 bool spaceWheelBrushSize();
 int undoLimit();
 bool confirmDiscard();
+int fileDropAction();
 int thumbnailQuality();
+int newLayerPlacement();
+bool newLayersStayInGroup();
 int defaultShape();
 int defaultShapeStyle();
 int defaultBrushStyle();

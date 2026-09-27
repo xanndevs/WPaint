@@ -16,6 +16,18 @@ public:
         QString error;
     };
 
+    // Where a newly created layer or group goes, and which folder counts it as a
+    // child. The two are one answer and cannot be derived from each other: "the
+    // bottom of the group" and "one past the last child" are the same index and
+    // mean different things, so the index and the intent travel together.
+    struct NewEntrySpot {
+        int index = 0;
+        int owner = -1; // the folder that gains a child, or -1
+        // "Work the owner out from the index", for a caller that has only an
+        // index. Deliberately not 0 or -1: both are places a real owner can be.
+        static constexpr int kFromIndex = -2;
+    };
+
     explicit LayerStack(QObject* parent = nullptr);
 
     const QList<Layer>& layers() const { return m_layers; }
@@ -47,7 +59,12 @@ public:
     // --- Mutators. Each emits changed(); undo commands wrap several calls.
     void setSize(const QSize& size); // resize every layer (crop or pad)
     void replaceAll(const QList<Layer>& layers, int activeIndex);
-    void addLayer(int index, const Layer& layer);
+    // Returns where the layer landed, which is not `index` if the background
+    // pushed it up: the shell makes the new layer active, and "the new layer" is
+    // only meaningful if it knows which one that is.
+    int addLayer(int index, const Layer& layer);
+    // The same, for a caller that was handed a NewEntrySpot and means it.
+    int addLayer(const NewEntrySpot& spot, const Layer& layer);
     void removeLayer(int index);
     void moveLayer(int from, int to); // reorder around the active index
     // Moves the run that starts at `from` -- one entry, or a whole folder with
@@ -81,11 +98,17 @@ public:
     // when the selection is not a single run. `folded` is the new folder's
     // initial state; the preference that decides it lives in Settings.
     int groupInto(const QList<int>& selection, bool folded);
-    // An empty group, for when there is nothing to group yet. It lands at the
-    // top like a new layer, because that is where the layers about to go into
-    // it belong. Returns its index, or -1 on a document with no background to
-    // sit above.
-    int addFolder(bool folded);
+    // An empty group, for when there is nothing to group yet. Placed by the same
+    // rule as a new layer, so a group and a layer added one after the other do
+    // not end up in two different parts of the document. Returns its index, or
+    // -1 on a document with no background to sit above.
+    int addFolder(bool folded, NewLayerPlacement placement = NewLayerPlacement::AboveAll,
+                  int anchor = -1, bool stayInGroup = false);
+
+    NewEntrySpot newEntrySpot(NewLayerPlacement placement, int anchor,
+                              bool stayInGroup) const;
+    // Just the index, for callers that do not care which folder claims it.
+    int newEntryIndex(NewLayerPlacement placement, int anchor, bool stayInGroup) const;
     bool ungroup(int folderIndex);
     // Removes a selection -- folders, their children and nested groups -- as one
     // structural step, fixing up the counts of the folders that survive it.
@@ -146,6 +169,11 @@ private:
     // lifted out, or -1 when the move cannot be made. Shared by canMoveSpan()
     // and moveSpan() so the two can never disagree about what is legal.
     int spanDestination(int from, int to, bool intoFolder) const;
+    // The insert that fixes up the folder that gained a child, and returns where
+    // the entry landed. addLayer() and addFolder() both go through here.
+    // `owner` is NewEntrySpot::kFromIndex for a caller that only has an index.
+    int insertEntry(int index, const Layer& layer,
+                    int owner = NewEntrySpot::kFromIndex);
     // Draws entries first..last (inclusive) bottom-up into one image, topmost
     // last. A negative `first` means the whole list; withBackground paints the
     // backdrop colour under them, and onlyVisible is what the canvas shows

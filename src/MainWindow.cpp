@@ -42,6 +42,7 @@
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QScrollArea>
 #include <QSlider>
@@ -435,11 +436,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // itself has to be rebuilt. What the changed-callback has to cover grows as
     // the table does, so it is one function rather than a lambda that only knows
     // about the first setting.
-    Settings::setChangedCallback([this] {
-        applySettings();
+    //
+    // The callback list outlives the window that registered into it, and with a
+    // second window open either of them can be closed while the other lives on.
+    // Hence the guarded pointer rather than `this`.
+    QPointer<MainWindow> settingsGuard(this);
+    Settings::setChangedCallback([settingsGuard] {
+        if (!settingsGuard)
+            return;
+        settingsGuard->applySettings();
         // A rebind has to take effect with the dialog still open, or the page
         // would only be showing you what the next launch would look like.
-        applyShortcuts();
+        settingsGuard->applyShortcuts();
     });
     applySettings();
 
@@ -860,7 +868,11 @@ void MainWindow::buildActions() {
     });
 
     bind(themeMenu->menuAction(), QStringLiteral("view.theme"));
-    Theme::setModeChangedCallback([this] { syncColorWell(); });
+    QPointer<MainWindow> modeGuard(this);
+    Theme::setModeChangedCallback([modeGuard] {
+        if (modeGuard)
+            modeGuard->syncColorWell();
+    });
 }
 
 void MainWindow::openResizeDialog() {
@@ -1280,9 +1292,10 @@ void MainWindow::buildCentral() {
     placeSizePanel();
 }
 
-MainWindow::~MainWindow() {
-    Theme::setModeChangedCallback(nullptr);
-}
+// The QPointer guards in the two callbacks make this unnecessary, and it was
+// never right anyway: it cleared the *one* callback slot, which with a list
+// means clearing the first entry rather than this window's.
+MainWindow::~MainWindow() = default;
 
 void MainWindow::placeSizePanel() {
     if (!m_sizePanel || !m_scrollArea)
@@ -2013,15 +2026,30 @@ void MainWindow::runLayerCommand(const QString& text, std::function<void()> muta
 }
 
 void MainWindow::addLayer() {
-    runLayerCommand(tr("Add layer"), [this] {
+    // The rail's selection if there is one, the canvas's active layer otherwise:
+    // "above the selected layer" has to mean something when the selection is
+    // empty, and the active layer is what the user was last working on.
+    int at = -1;
+    runLayerCommand(tr("Add layer"), [this, &at] {
         Layer l;
         l.name = m_stack->nextName(tr("Layer"));
         l.image = QImage(m_stack->size(), QImage::Format_ARGB32_Premultiplied);
         l.image.fill(Qt::transparent);
-        m_stack->addLayer(0, l);
-        m_stack->setActiveIndex(0);
+        at = m_stack->addLayer(newLayerInsertIndex(), l);
+        m_stack->setActiveIndex(at);
     });
-    m_layersPanel->setActiveLayer(0);
+    if (at >= 0)
+        m_layersPanel->setActiveLayer(at);
+}
+
+// The index a new layer or group goes at, from the preference and the current
+// selection. Both callers go through here so a layer added from the rail and a
+// group added from the button cannot end up in different places.
+int MainWindow::newLayerInsertIndex() const {
+    const QList<int> sel = m_layersPanel->selectedIndices();
+    const int anchor = sel.isEmpty() ? m_stack->activeIndex() : sel.first();
+    return m_stack->newEntryIndex(static_cast<NewLayerPlacement>(Settings::newLayerPlacement()),
+                                  anchor, Settings::newLayersStayInGroup());
 }
 
 // The layer keys are QActions rather than key handling on the rail, so they
@@ -2146,7 +2174,11 @@ void MainWindow::groupLayers(const QList<int>& selection) {
         const QList<Layer> before = m_stack->layers();
         const int beforeActive = m_stack->activeIndex();
         m_canvas->bakeActiveObject();
-        const int at = m_stack->addFolder(Settings::newFoldersFolded());
+        const int at = m_stack->addFolder(
+            Settings::newFoldersFolded(),
+            static_cast<NewLayerPlacement>(Settings::newLayerPlacement()),
+            selection.isEmpty() ? m_stack->activeIndex() : selection.first(),
+            Settings::newLayersStayInGroup());
         if (at < 0)
             return;
         m_undo->push(

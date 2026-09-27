@@ -36,6 +36,21 @@ using ShortcutMap = QMap<QString, QString>;
             [](SettingsValues& v, const QVariant& q) { v.field = q.value<type>(); } \
     }
 
+// For a field that is a scoped enum. QVariant has no opinion about one, and
+// registering an enum class as a metatype just to save an int would put a type
+// name in the config file for no gain -- the number is what a reader wants to
+// see anyway.
+#define WP_ENUM_SETTING(key, field, type)                                       \
+    {                                                                           \
+        key,                                                                    \
+            [](const SettingsValues& v) {                                        \
+                return QVariant::fromValue(static_cast<int>(v.field));          \
+            },                                                                  \
+                [](SettingsValues& v, const QVariant& q) {                       \
+                    v.field = static_cast<type>(q.toInt());                      \
+                }                                                               \
+    }
+
 // For the one field that is a container. A QSettings QVariantMap is written as a
 // quoted string holding the variant's bytes, which does survive a round trip --
 // and only because Qt happens to decode a variant smuggled inside a string when
@@ -80,7 +95,10 @@ constexpr Entry kEntries[] = {
     WP_SETTING("tools/spaceWheelBrushSize", spaceWheelBrushSize, bool),
     WP_SETTING("undo/maxSteps", undoLimit, int),
     WP_SETTING("files/confirmDiscard", confirmDiscard, bool),
+    WP_ENUM_SETTING("files/dropAction", fileDropAction, FileDropAction),
     WP_SETTING("layers/thumbnailQuality", thumbnailQuality, int),
+    WP_ENUM_SETTING("layers/newLayerPlacement", newLayerPlacement, NewLayerPlacement),
+    WP_SETTING("layers/newLayersStayInGroup", newLayersStayInGroup, bool),
     WP_SETTING("defaults/shape", defaultShape, int),
     WP_SETTING("defaults/shapeStyle", defaultShapeStyle, int),
     WP_SETTING("defaults/brushStyle", defaultBrushStyle, int),
@@ -118,7 +136,10 @@ bool smoothText() { return g_values.smoothText; }
 bool spaceWheelBrushSize() { return g_values.spaceWheelBrushSize; }
 int undoLimit() { return g_values.undoLimit; }
 bool confirmDiscard() { return g_values.confirmDiscard; }
+int fileDropAction() { return static_cast<int>(g_values.fileDropAction); }
 int thumbnailQuality() { return g_values.thumbnailQuality; }
+int newLayerPlacement() { return static_cast<int>(g_values.newLayerPlacement); }
+bool newLayersStayInGroup() { return g_values.newLayersStayInGroup; }
 int defaultShape() { return g_values.defaultShape; }
 int defaultShapeStyle() { return g_values.defaultShapeStyle; }
 int defaultBrushStyle() { return g_values.defaultBrushStyle; }

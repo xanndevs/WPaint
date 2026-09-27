@@ -256,6 +256,36 @@ void SettingsDialog::buildBehaviorPage() {
          [](SettingsValues& out, QWidget* w) {
              out.newFoldersFolded = static_cast<FluentSwitch*>(w)->isChecked();
          }},
+        {"Layers", "newLayerPlacement", "Put a new layer",
+         "Above All Layers and Below All Layers ignore what is selected and use the "
+         "top or the bottom of the document. Above Selected and Below Selected put "
+         "the new layer directly above or below the layer you have selected, which is "
+         "what a second or third layer almost always wants.",
+         Desc::Tooltip,
+         [](SettingsRow* r) {
+             auto* combo = new FluentCombo(r);
+             combo->setMaximumWidth(260);
+             combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+             combo->addItems({QObject::tr("Above All Layers"),
+                              QObject::tr("Above Selected"),
+                              QObject::tr("Below Selected"),
+                              QObject::tr("Below All Layers")});
+             return combo;
+         },
+         [](SettingsValues& out, QWidget* w) {
+             out.newLayerPlacement = static_cast<NewLayerPlacement>(
+                 static_cast<QComboBox*>(w)->currentIndex());
+         }},
+        {"Layers", "newLayersStayInGroup", "Keep a new layer in the group it belongs to",
+         "Only for the two placements that would otherwise drop the layer out of the "
+         "group you are working in. Above All Layers then puts it at the top of that "
+         "group and Below All Layers at the bottom, instead of at the top or the "
+         "bottom of the whole document.",
+         Desc::Tooltip,
+         [](SettingsRow* r) { return makeSwitch(r); },
+         [](SettingsValues& out, QWidget* w) {
+             out.newLayersStayInGroup = static_cast<FluentSwitch*>(w)->isChecked();
+         }},
         {"Tools", "smoothShapes", "Smooth the outlines of shapes you draw",
          "Blend the edge of a rectangle, line or arrow into the pixels around it. "
          "Turn it off to keep every shape perfectly hard-edged.",
@@ -321,6 +351,25 @@ void SettingsDialog::buildBehaviorPage() {
          [](SettingsValues& out, QWidget* w) {
              out.confirmDiscard = static_cast<FluentSwitch*>(w)->isChecked();
          }},
+        {"History and files", "fileDropAction",
+         "Dropping an image on a canvas you have not drawn on",
+         "A new image with nothing on it is not worth a question, so the "
+         "preference decides: open the dropped file as the image, or drop it "
+         "onto the canvas that is already there. Once you have drawn on the "
+         "canvas, WPaint asks instead.",
+         Desc::Tooltip,
+         [](SettingsRow* r) {
+             auto* combo = new FluentCombo(r);
+             combo->setMaximumWidth(260);
+             combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+             combo->addItems({QObject::tr("Open it as a new image"),
+                              QObject::tr("Place it on the canvas")});
+             return combo;
+         },
+         [](SettingsValues& out, QWidget* w) {
+             out.fileDropAction = static_cast<FileDropAction>(
+                 static_cast<QComboBox*>(w)->currentIndex());
+         }},
     };
     buildPage(specs, tr("Behavior"),
               tr("How the editor responds while you work. None of these change what "
@@ -337,6 +386,26 @@ void SettingsDialog::buildBehaviorPage() {
         ->setChecked(v.spaceWheelBrushSize);
     static_cast<FluentSwitch*>(m_controls.value("confirmDiscard"))
         ->setChecked(v.confirmDiscard);
+    static_cast<QComboBox*>(m_controls.value("fileDropAction"))
+        ->setCurrentIndex(static_cast<int>(v.fileDropAction));
+    static_cast<QComboBox*>(m_controls.value("newLayerPlacement"))
+        ->setCurrentIndex(static_cast<int>(v.newLayerPlacement));
+    auto* stayInGroup = static_cast<FluentSwitch*>(m_controls.value("newLayersStayInGroup"));
+    stayInGroup->setChecked(v.newLayersStayInGroup);
+    // The two rows are one decision, and one of the four answers makes the other
+    // meaningless: a layer placed above or below the *selected* layer is already
+    // wherever it is relative to that layer's group, so there is no group for it
+    // to stay in. Greyed rather than hidden, so the option is where the user
+    // expects it when they go looking for it.
+    auto* placement = static_cast<QComboBox*>(m_controls.value("newLayerPlacement"));
+    const auto syncStayInGroup = [stayInGroup, placement] {
+        const int at = placement->currentIndex();
+        const bool meaningful = at == static_cast<int>(NewLayerPlacement::AboveAll) ||
+                                at == static_cast<int>(NewLayerPlacement::BelowAll);
+        stayInGroup->setEnabled(meaningful);
+    };
+    connect(placement, &QComboBox::currentIndexChanged, this, syncStayInGroup);
+    syncStayInGroup();
     static_cast<QComboBox*>(m_controls.value("thumbnailQuality"))
         ->setCurrentIndex(v.thumbnailQuality);
     static_cast<QSpinBox*>(m_controls.value("undoLimit"))->setValue(v.undoLimit);
@@ -479,10 +548,8 @@ void SettingsDialog::buildDefaultsPage() {
          [swatchOf](SettingsValues& out, QWidget* w) {
              if (auto* swatch = swatchOf(w, 0)) out.defaultBackground = swatch->color();
          }},
-        {"Colors", "palette", "The colors in the toolbar",
-         "Twenty swatches, drawn as the toolbar draws them: the first ten on the top "
-         "row, the next ten below. Pick Custom to build your own set, and the editor "
-         "appears under this row.",
+        {"Colors", "palette", "Change the palette of swatches",
+         "",
          Desc::Inline,
          [paletteNames, paletteSwatches](SettingsRow* r) {
              auto* combo = new PalettePresetCombo(r);
@@ -608,6 +675,9 @@ void SettingsDialog::reload() {
     sw("smoothText")->setChecked(v.smoothText);
     sw("spaceWheel")->setChecked(v.spaceWheelBrushSize);
     sw("confirmDiscard")->setChecked(v.confirmDiscard);
+    sw("newLayersStayInGroup")->setChecked(v.newLayersStayInGroup);
+    combo("fileDropAction")->setCurrentIndex(static_cast<int>(v.fileDropAction));
+    combo("newLayerPlacement")->setCurrentIndex(static_cast<int>(v.newLayerPlacement));
     combo("thumbnailQuality")->setCurrentIndex(v.thumbnailQuality);
     spin("undoLimit")->setValue(v.undoLimit);
     combo("shapeStyle")->setCurrentIndex(v.defaultShapeStyle);

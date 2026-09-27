@@ -111,10 +111,15 @@ void LayerStack::replaceAll(const QList<Layer>& layers, int activeIndex) {
     emit activeChanged(m_active);
 }
 
-void LayerStack::addLayer(int index, const Layer& layer) {
+int LayerStack::addLayer(int index, const Layer& layer) {
+    return addLayer(NewEntrySpot{index, NewEntrySpot::kFromIndex}, layer);
+}
+
+int LayerStack::addLayer(const NewEntrySpot& spot, const Layer& layer) {
     // A background layer is a document property, not a paintable layer; it is
     // only ever created by addBackgroundLayer().
-    if (layer.isBackground) return;
+    if (layer.isBackground) return -1;
+    int index = spot.index;
     // New layers go above the background (the background is the bottom entry).
     if (backgroundIndex() >= 0 && (index < 0 || index > backgroundIndex()))
         index = backgroundIndex();
@@ -124,12 +129,84 @@ void LayerStack::addLayer(int index, const Layer& layer) {
     if (!m_layers.isEmpty() && !size().isEmpty() && layer.image.size() != size()) {
         Layer copy = layer;
         copy.image = Draw::resizeCanvasImage(copy.image, size());
-        m_layers.insert(index < 0 ? 0 : qMin(index, m_layers.size()), copy);
-    } else {
-        m_layers.insert(index < 0 ? 0 : qMin(index, m_layers.size()), layer);
+        return insertEntry(index, copy, spot.owner);
     }
+    return insertEntry(index, layer, spot.owner);
+}
+
+// The insert that addLayer() and addFolder() share, because putting a layer in
+// the middle of a group is only half the job: the group it lands in has just
+// gained a child, and in a flat list nothing else knows that. A count that is
+// left alone is not a rounding error -- the group goes on claiming entries that
+// are no longer under it, so the entry that follows it is read as a child and
+// painting inside the group lands on the wrong layer.
+int LayerStack::insertEntry(int index, const Layer& layer, int owner) {
+    const int at = qBound(0, index, m_layers.size());
+    // Worked out *before* the insert, when the runs still mean what they said.
+    // A caller with only an index gets the strict reading: the group gains a
+    // child only if the index is already inside its run. Just past the last child
+    // is a sibling -- which is what "above the layer below the group" means. A
+    // caller that means "the bottom of that group" says so in its spot, because
+    // the position and the intent are the same number and cannot be told apart
+    // after the fact.
+    if (owner == NewEntrySpot::kFromIndex)
+        owner = owningFolder(at);
+    m_layers.insert(at, layer);
+    if (owner >= 0) {
+        // The owner itself moved down by the insert if the entry went in above.
+        const int shifted = owner >= at ? owner + 1 : owner;
+        if (shifted < m_layers.size() && isFolder(shifted))
+            m_layers[shifted].childCount += 1;
+    }
+    fixChildCounts();
     clampActive();
     emit changed();
+    return at;
+}
+
+LayerStack::NewEntrySpot LayerStack::newEntrySpot(NewLayerPlacement placement, int anchor,
+                                                 bool stayInGroup) const {
+    const int bg = backgroundIndex();
+    // Above the background is the bottom of the stack: the last place an entry
+    // can go, whatever the rule says.
+    const int bottom = bg >= 0 ? bg : m_layers.size();
+    const bool anchorOk =
+        anchor >= 0 && anchor < m_layers.size() && !m_layers.at(anchor).isBackground;
+    // "The group it is in", which is the group that owns the anchor -- and a
+    // group anchor means the group *above* it, since a group is not inside
+    // itself. An anchor with no group above it has no group to stay in, and the
+    // checkbox has nothing to do.
+    const int owner = anchorOk ? owningFolder(anchor) : -1;
+    const bool inGroup = stayInGroup && owner >= 0;
+
+    switch (placement) {
+    case NewLayerPlacement::AboveAll:
+        // The top of its group, not the top of the document: a new layer for the
+        // group you are working in belongs in it, at the top, or it lands on top
+        // of the group and reads as a sibling of it.
+        return inGroup ? NewEntrySpot{owner + 1, owner} : NewEntrySpot{0, -1};
+    case NewLayerPlacement::AboveSelected:
+        // Directly above the selected layer: inserting *at* the anchor is above
+        // it, because everything from this index down shifts. The owner is left
+        // to the index, so that "above the selected layer" never quietly changes
+        // which group a layer belongs to.
+        return anchorOk ? NewEntrySpot{anchor, NewEntrySpot::kFromIndex} : NewEntrySpot{0, -1};
+    case NewLayerPlacement::BelowSelected:
+        return anchorOk ? NewEntrySpot{anchor + 1, NewEntrySpot::kFromIndex} : NewEntrySpot{bottom, -1};
+    case NewLayerPlacement::BelowAll:
+        // The bottom of its group is the entry just past that group's children,
+        // and the group is named as the owner because that is the whole point of
+        // the option: the position is outside the run until the count grows to
+        // reach it.
+        return inGroup ? NewEntrySpot{owner + 1 + childCountOf(owner), owner}
+                       : NewEntrySpot{bottom, -1};
+    }
+    return NewEntrySpot{0, -1};
+}
+
+int LayerStack::newEntryIndex(NewLayerPlacement placement, int anchor,
+                              bool stayInGroup) const {
+    return newEntrySpot(placement, anchor, stayInGroup).index;
 }
 
 void LayerStack::addBackgroundLayer(const QColor& color) {
@@ -647,25 +724,27 @@ int LayerStack::groupInto(const QList<int>& selection, bool folded) {
     return at;
 }
 
-int LayerStack::addFolder(bool folded) {
-    // A group holds what is put in it, and what goes in it goes on top, so an
-    // empty one belongs at the top of the stack rather than at the selection --
-    // which is also where "add layer" puts the layers that will fill it.
+int LayerStack::addFolder(bool folded, NewLayerPlacement placement, int anchor,
+                           bool stayInGroup) {
+    // Placed by the same rule as a new layer, so a group and a layer added one
+    // after the other do not end up in two different parts of the document. The
+    // default is the top of the stack: a group holds what is put in it, and what
+    // goes in it goes on top.
     Layer folder;
     folder.name = nextName(tr("Group"));
     folder.isFolder = true;
     folder.childCount = 0;
     folder.folded = folded;
     folder.visible = true;
-    const int at = qMin(0, m_layers.size());
-    m_layers.insert(at, folder);
-    m_active = at;
-    emit changed();
+    const NewEntrySpot spot = newEntrySpot(placement, anchor, stayInGroup);
+    insertEntry(spot.index, folder, spot.owner);
+    m_active = spot.index;
     emit activeChanged(m_active);
-    return at;
+    return spot.index;
 }
 
-bool LayerStack::ungroup(int folderIndex) {    if (!isFolder(folderIndex))
+bool LayerStack::ungroup(int folderIndex) {
+    if (!isFolder(folderIndex))
         return false;
     const int n = childCountOf(folderIndex);
     m_layers.removeAt(folderIndex);

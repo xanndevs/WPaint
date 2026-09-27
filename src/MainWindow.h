@@ -134,6 +134,8 @@ public slots:
     void groupLayers(const QList<int>& selection);
     void mergeLayerDown(int index);
     void mergeLayers(const QList<int>& selection);
+    // Where a new layer or group goes, from the preference and the selection.
+    int newLayerInsertIndex() const;
     void renameLayers(int index, const QString& name, const QList<int>& alsoSelected);
     void showToast(const QString& message);
 
