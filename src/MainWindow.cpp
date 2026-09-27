@@ -98,6 +98,17 @@ QString shapeStyleIcon(ShapeStyle s) {
     return "";
 }
 
+// The fill-mode button shows the *current* mode rather than a generic pattern
+// glyph, so each mode needs its own variant of the same hatched-square artwork.
+QString shapeStyleModeIcon(ShapeStyle s) {
+    switch (s) {
+    case ShapeStyle::Outline: return "shape-fill-mode-selection-out";
+    case ShapeStyle::Fill: return "shape-fill-mode-selection-in";
+    case ShapeStyle::OutlineFill: return "shape-fill-mode-selection-out-in";
+    }
+    return "";
+}
+
 // Renders an SVG with its baked-in colors (gradients), bypassing the mask
 // tinting used for monochrome icons.
 QIcon renderedIcon(const QString& svgName, int px) {
@@ -879,8 +890,10 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         styleBtn->setToolTip(tr("Shape fill pattern"));
         m_shapeStyleButton = styleBtn;
         m_shapeStyleButton->setFixedSize(big, big);
-        Theme::setIcon(m_shapeStyleButton, "shape-fill-mode-selection", iconPx);
-        m_shapeStyleButton->setIconSize(QSize(iconPx, iconPx));
+        const int styleIconPx = iconPx;
+        Theme::setIcon(m_shapeStyleButton,
+                       shapeStyleModeIcon(m_canvas->currentShapeStyle()), styleIconPx);
+        m_shapeStyleButton->setIconSize(QSize(styleIconPx, styleIconPx));
         QMenu* styleMenu = new QMenu(m_shapeStyleButton);
         QActionGroup* styleGrp = new QActionGroup(styleMenu);
         styleGrp->setExclusive(true);
@@ -888,7 +901,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
             QAction* a = styleMenu->addAction(Theme::icon(shapeStyleIcon(st), 18),
                                               shapeStyleName(st));
             styleGrp->addAction(a);
-            connect(a, &QAction::triggered, this, [this, st] {
+            connect(a, &QAction::triggered, this, [this, st, styleIconPx] {
                 applyShapeStyle(st);
             });
         }
@@ -1248,6 +1261,11 @@ void MainWindow::applyShape(ShapeKit::Shape shape) {
 
 void MainWindow::applyShapeStyle(ShapeStyle style) {
     m_canvas->setShapeStyle(style);
+    // Through Theme::setIcon, not setIcon: the property is what the theme's
+    // re-tint pass reads, so bypassing it left the button on the old glyph.
+    if (m_shapeStyleButton)
+        Theme::setIcon(m_shapeStyleButton, shapeStyleModeIcon(style),
+                       m_shapeStyleButton->iconSize().width());
 }
 
 void MainWindow::applyBrushStyle(BrushStyle style) {
