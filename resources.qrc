@@ -5,6 +5,7 @@
     <file>assets/icons/crop.svg</file>
     <file>assets/icons/resize.svg</file>
     <file>assets/icons/flip-horizontal.svg</file>
+    <file>assets/icons/magnify.svg</file>
     <file>assets/icons/rotate-left.svg</file>
     <file>assets/icons/rotate-right.svg</file>
     <file>assets/icons/pencil.svg</file>
@@ -23,6 +24,7 @@
     <file>assets/icons/shape-diamond.svg</file>
     <file>assets/icons/shape-pentagon.svg</file>
     <file>assets/icons/shape-arrow.svg</file>
+    <file>assets/icons/shape-pointing-arrow.svg</file>
     <file>assets/icons/shape-outline.svg</file>
     <file>assets/icons/shape-fill.svg</file>
     <file>assets/icons/shape-outline-fill.svg</file>
@@ -51,6 +53,9 @@
     <file>assets/icons/zoom-fit.svg</file>
     <file>assets/icons/flip-vertical.svg</file>
     <file>assets/icons/rotate-180.svg</file>
+    <file>assets/icons/shape-fill-mode-selection-in.svg</file>
+    <file>assets/icons/shape-fill-mode-selection-out.svg</file>
+    <file>assets/icons/shape-fill-mode-selection-out-in.svg</file>
     <file>assets/icons/shape-fill-mode-selection.svg</file>
     <file>assets/icons/canvas-handles.svg</file>
     <file>assets/icons/theme.svg</file>
