@@ -1,4 +1,5 @@
 #include "MainWindow.h"
+#include "Settings.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -33,6 +34,9 @@ int main(int argc, char** argv) {
     else if (light)
         Theme::setMode(Theme::Mode::Light);
     Theme::init();
+    // After the QApplication identity is set, so QSettings lands in the right
+    // scope, and before any window reads a setting.
+    Settings::load();
 
     MainWindow win;
     win.show();

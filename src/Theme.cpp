@@ -484,6 +484,7 @@ QDialog { background: %4; }
 #SizeSliderValue[wpEditing="1"] {
     color: %3; background: %9; border: 1px solid %14;
 }
+#PreferencesHint { color: %10; font-size: %12px; }
 )QSS")
         .arg(t.fontFamily)      // %1
         .arg(t.pxBase)          // %2

@@ -9,6 +9,8 @@
 #include "LayerStack.h"
 #include "LayersPanel.h"
 #include "ResizeDialog.h"
+#include "Settings.h"
+#include "SettingsDialog.h"
 #include "SizeSliderPanel.h"
 #include "Theme.h"
 
@@ -431,6 +433,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     m_canvas = new CanvasView(m_stack, m_undo, this);
     m_canvas->setColors(QColor("#000000"), QColor("#FFFFFF"));
+    // A setting that only changes how the document is drawn is applied by
+    // repainting; nothing about the document itself has to be rebuilt.
+    Settings::setChangedCallback([this] { m_canvas->update(); });
 
     buildActions();
     buildMenuBar();
@@ -581,6 +586,14 @@ void MainWindow::buildActions() {
     Theme::setActionIcon(resizeAct, "resize");
     connect(resizeAct, &QAction::triggered, this, [this] { openResizeDialog(); });
 
+    QAction* prefsAct = new QAction(tr("Preferences..."), this);
+    overrideShortcut(prefsAct, QKeySequence(Qt::CTRL | Qt::Key_Comma));
+    Theme::setActionIcon(prefsAct, "settings");
+    connect(prefsAct, &QAction::triggered, this, [this] {
+        SettingsDialog dlg(this);
+        dlg.exec();
+    });
+
     // View
     QAction* zoomIn = new QAction(tr("Zoom In"), this);
     overrideShortcut(zoomIn, QKeySequence::ZoomIn);
@@ -630,6 +643,8 @@ void MainWindow::buildActions() {
     editMenu->addAction(m_deleteAction);
     editMenu->addSeparator();
     editMenu->addAction(resizeAct);
+    editMenu->addSeparator();
+    editMenu->addAction(prefsAct);
 
     QMenu* viewMenu = menuBar()->addMenu(tr("View"));
     viewMenu->addAction(zoomIn);

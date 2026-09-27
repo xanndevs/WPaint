@@ -25,6 +25,8 @@ qt_add_executable(wpaint
     src/SizeSliderPanel.cpp
     src/CopilotPanel.cpp
     src/ResizeDialog.cpp
+    src/Settings.cpp
+    src/SettingsDialog.cpp
     src/MainWindow.cpp
 )
 

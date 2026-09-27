@@ -53,11 +53,12 @@
     <file>assets/icons/zoom-fit.svg</file>
     <file>assets/icons/flip-vertical.svg</file>
     <file>assets/icons/rotate-180.svg</file>
+    <file>assets/icons/shape-fill-mode-selection.svg</file>
     <file>assets/icons/shape-fill-mode-selection-in.svg</file>
     <file>assets/icons/shape-fill-mode-selection-out.svg</file>
     <file>assets/icons/shape-fill-mode-selection-out-in.svg</file>
-    <file>assets/icons/shape-fill-mode-selection.svg</file>
     <file>assets/icons/canvas-handles.svg</file>
     <file>assets/icons/theme.svg</file>
+    <file>assets/icons/settings.svg</file>
 </qresource>
 </RCC>

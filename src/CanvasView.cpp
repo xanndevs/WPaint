@@ -3,6 +3,7 @@
 #include "Commands.h"
 #include "DrawingUtils.h"
 #include "LayerStack.h"
+#include "Settings.h"
 #include "Theme.h"
 
 #include <QApplication>
@@ -1427,7 +1428,10 @@ void CanvasView::drawWorkspace(QPainter& p) {
         Draw::checkerboard(p, QRect(QPoint(0, 0), img), 8,
                            Theme::tokens().checkerLight, Theme::tokens().checkerDark);
     }
-    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    // Blit quality is a user preference: smooth blends the pixels when the
+    // document is scaled, nearest keeps them as hard-edged blocks. Only the
+    // screen is affected — the layers themselves are never resampled here.
+    p.setRenderHint(QPainter::SmoothPixmapTransform, Settings::antialiasCanvas());
     for (int i = m_stack->count() - 1; i >= 0; --i) {
         const Layer& l = m_stack->layerAt(i);
         if (!l.visible || l.isBackground || l.image.isNull()) continue;
