@@ -481,6 +481,13 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 updateWindowTitle();
                 updateEditActions();
             });
+    // Pristine is "no command has ever been pushed", which is the undo index
+    // rather than the clean index: a document with edits in it can be undone
+    // back to untouched, and it is untouched again at that point. The clean index
+    // answers a different question -- "is this what is on disk" -- which is not
+    // what anything here is asking.
+    connect(m_undo, &QUndoStack::indexChanged, this,
+            [this](int index) { m_documentPristine = index <= 0; });
     // The clipboard belongs to whatever is on screen when you look, and the image
     // sources that matter are other applications -- a PNG copied in a file
     // manager, "Copy image" on a page -- so the Edit menu has to be told when
@@ -1692,8 +1699,11 @@ bool MainWindow::confirmDiscard() {
         QMessageBox::Save);
     if (r == QMessageBox::Cancel)
         return false;
-    if (r == QMessageBox::Save)
-        saveDocument();
+    if (r == QMessageBox::Save && !saveDocument())
+        // The Save As dialog was cancelled, so nothing was written. Returning
+        // true here would then go on to throw the document away, which is the
+        // one thing the question was asking about.
+        return false;
     return true;
 }
 
@@ -1782,12 +1792,20 @@ void MainWindow::newDocument() {
     m_currentPath.clear();
     m_undo->clear();
     m_stack->clear();
+    // Whatever was floating, selected or half-drawn belongs to the document being
+    // left. It used to survive: a new image could open with a selection, and with
+    // the pixels of a pasted object still floating over it from the last one.
+    m_canvas->bakeActiveObject();
+    m_canvas->cancelFloating();
+    m_canvas->clearSelection();
     Layer l;
     l.name = tr("Layer 1");
     l.image = QImage(documentSizeFromDefaults(), QImage::Format_ARGB32_Premultiplied);
     l.image.fill(Qt::transparent);
     m_stack->replaceAll({l}, 0);
     m_stack->addBackgroundLayer(Settings::defaultBackground());
+    // The one path that makes a document pristine: never saved, nothing done to it.
+    m_documentPristine = true;
     m_canvas->setColors(Settings::defaultPrimary(), Settings::defaultSecondary());
     m_canvas->setBrushSize(Settings::defaultBrushSize());
     m_canvas->setBrushStyle(static_cast<BrushStyle>(Settings::defaultBrushStyle()));
@@ -1853,29 +1871,33 @@ void MainWindow::installDocument(const LayerStack& loaded, const QString& path) 
     if (!m_stack->hasBackground())
         m_stack->addBackgroundLayer(Qt::white);
     m_currentPath = path;
+    // A document from a file is not pristine, whatever the undo stack says: it
+    // has a history, and a file dropped onto it is a question rather than a
+    // decision. newDocument() is the only path that sets this.
+    m_documentPristine = false;
     updateWindowTitle();
     m_canvas->zoomFit();
     syncStatusSize();
 }
 
-void MainWindow::saveDocument() {
+bool MainWindow::saveDocument() {
     if (m_currentPath.isEmpty() || m_currentPath.endsWith(QLatin1String(".wpa")))
-        saveDocumentAs();
-    else
-        saveTo(m_currentPath);
+        return saveDocumentAs();
+    return saveTo(m_currentPath);
 }
 
-void MainWindow::saveDocumentAs() {
+bool MainWindow::saveDocumentAs() {
     QString filter;
     const QString file = QFileDialog::getSaveFileName(
         this, tr("Save As"), m_currentPath.isEmpty() ? tr("untitled") : m_currentPath,
         tr("PNG Image (*.png);;JPEG Image (*.jpg);;Bitmap (*.bmp);;"
            "GIF Image (*.gif);;WPaint Project (*.wpa)"),
         &filter);
+    // Cancelled: nothing was written, and the caller has to hear about it.
     if (file.isEmpty())
-        return;
+        return false;
     m_currentPath = file;
-    saveTo(file);
+    return saveTo(file);
 }
 
 bool MainWindow::saveTo(const QString& path) {

@@ -1429,6 +1429,23 @@ void CanvasView::finishBoundaryResize() {
     applyBoundaryResize(r);
 }
 
+// Grows the canvas so it is at least `minimum`, from the bottom-right corner
+// and never smaller than it is now. The top-left corner does not move, so
+// nothing already drawn shifts: a document that gets bigger because an image
+// was dropped on it has everything exactly where it was.
+//
+// Returns true when the canvas actually changed, so a caller can tell a resize it
+// asked for from a no-op and put the two in one undo entry accordingly.
+bool CanvasView::growCanvasTo(const QSize& minimum) {
+    const QSize current = imageSize();
+    const QSize want(qMax(current.width(), minimum.width()),
+                     qMax(current.height(), minimum.height()));
+    if (want == current || want.isEmpty())
+        return false;
+    applyBoundaryResize(QRect(QPoint(0, 0), want));
+    return true;
+}
+
 void CanvasView::applyBoundaryResize(const QRect& r) {
     if (m_floatingActive) weldFloating();
     clearSelection();

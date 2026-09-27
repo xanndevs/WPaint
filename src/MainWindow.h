@@ -124,6 +124,14 @@ private:
     bool eventFilter(QObject* watched, QEvent* ev) override;
 
 public slots:
+    // A document that has never been drawn on, resized or otherwise touched, and
+    // has never been saved. A file dropped on one of those needs no question
+    // asked; on anything else it does. Not the same question as "are there
+    // unsaved changes": a file opened from disk is not pristine either.
+    bool isDocumentPristine() const {
+        return m_documentPristine && m_currentPath.isEmpty();
+    }
+
     // The rail's own verbs. Public because the panel's actions, the rail's
     // scoped shortcuts and the context menu all three reach them, and because
     // "copy these layers" is a thing worth being able to ask for from outside
@@ -163,8 +171,10 @@ private:
     bool confirmDiscard();
     void newDocument();
     void openDocument();
-    void saveDocument();
-    void saveDocumentAs();
+    // False when the file dialog was cancelled, so a caller that is about to
+    // replace the document -- confirmDiscard() -- can decline to.
+    bool saveDocument();
+    bool saveDocumentAs();
     bool saveTo(const QString& path);
     QImage exportedComposite() const;
     void updateWindowTitle();
@@ -219,6 +229,14 @@ private:
     QDockWidget* m_copilotDock;
 
     QString m_currentPath;
+    // Has anything happened to this document since it was created? Not the same
+    // question as "are there unsaved changes": a document opened from a file has
+    // never been drawn on and is not pristine either, and a new one that has
+    // been drawn on is not -- which is what makes the two questions different
+    // for anything that wants to know whether a dropped file can be taken
+    // without asking (see the file drop). Driven by the undo index, so undoing
+    // back to the start makes a document pristine again.
+    bool m_documentPristine = true;
     QImage m_copied;
     QPointF m_copiedTopLeft;
 

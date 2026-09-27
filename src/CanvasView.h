@@ -146,6 +146,10 @@ public:
     // ---- whole-image ops ----
     void cropTo(const QRectF& imageRect);
     void setCanvasSize(const QSize& size);
+    // Grows the canvas to at least `minimum`, from the bottom-right corner, with
+    // the top-left corner -- and so everything already drawn -- left exactly where
+    // it is. False when nothing needed to change.
+    bool growCanvasTo(const QSize& minimum);
     void rotateCanvas(qreal degrees);
     void flipCanvas(Qt::Orientation orientation);
     void rotateSelection(qreal degrees);
