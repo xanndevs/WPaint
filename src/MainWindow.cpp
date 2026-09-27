@@ -433,9 +433,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     m_canvas = new CanvasView(m_stack, m_undo, this);
     m_canvas->setColors(QColor("#000000"), QColor("#FFFFFF"));
-    // A setting that only changes how the document is drawn is applied by
-    // repainting; nothing about the document itself has to be rebuilt.
-    Settings::setChangedCallback([this] { m_canvas->update(); });
+    // A display preference is applied by repainting; nothing about the document
+    // itself has to be rebuilt. What the changed-callback has to cover grows as
+    // the table does, so it is one function rather than a lambda that only knows
+    // about the first setting.
+    Settings::setChangedCallback([this] { applySettings(); });
+    applySettings();
 
     buildActions();
     buildMenuBar();
@@ -617,7 +620,8 @@ void MainWindow::buildActions() {
 
     QAction* boundaryHandles = new QAction(tr("Show Canvas Resize Handles"), this);
     boundaryHandles->setCheckable(true);
-    boundaryHandles->setChecked(m_canvas->boundaryHandlesEnabled());
+    boundaryHandles->setChecked(Settings::showBoundaryHandles());
+    m_boundaryHandlesAction = boundaryHandles;
     Theme::setActionIcon(boundaryHandles, "canvas-handles");
     connect(boundaryHandles, &QAction::toggled, m_canvas,
             &CanvasView::setBoundaryHandlesEnabled);
@@ -677,13 +681,13 @@ void MainWindow::buildActions() {
     currentTheme->setChecked(true);
 
     connect(sysThemeAct, &QAction::triggered, this, [this] {
-        Theme::setPreference(Theme::Pref::System);
+        setThemePreference(Theme::Pref::System);
     });
     connect(darkThemeAct, &QAction::triggered, this, [this] {
-        Theme::setPreference(Theme::Pref::Dark);
+        setThemePreference(Theme::Pref::Dark);
     });
     connect(lightThemeAct, &QAction::triggered, this, [this] {
-        Theme::setPreference(Theme::Pref::Light);
+        setThemePreference(Theme::Pref::Light);
     });
 
     overrideShortcut(themeMenu->menuAction(),
@@ -1333,7 +1337,7 @@ void MainWindow::editColor(bool primary) {
 
 bool MainWindow::confirmDiscard() {
     m_canvas->bakeActiveObject();
-    if (m_undo->isClean())
+    if (m_undo->isClean() || !Settings::confirmDiscard())
         return true;
     const auto r = QMessageBox::warning(
         this, tr("WPaint"),
@@ -1347,6 +1351,36 @@ bool MainWindow::confirmDiscard() {
     return true;
 }
 
+void MainWindow::setThemePreference(Theme::Pref pref) {
+    Theme::setPreference(pref);
+    // The choice is a preference, not view state: it has to survive a restart,
+    // or the View menu is a three-way radio that forgets where you put it.
+    SettingsValues v = Settings::values();
+    v.themePreference = static_cast<int>(pref);
+    Settings::apply(v);
+}
+
+void MainWindow::applySettings() {
+    m_canvas->setBoundaryHandlesEnabled(Settings::showBoundaryHandles());
+    m_undo->setUndoLimit(Settings::undoLimit());
+    m_canvas->update();
+    if (m_boundaryHandlesAction)
+        m_boundaryHandlesAction->setChecked(Settings::showBoundaryHandles());
+}
+
+QSize MainWindow::documentSizeFromDefaults() const {
+    const QString spec = Settings::defaultCanvasSize();
+    const QStringList parts = spec.split(QLatin1Char('x'), Qt::SkipEmptyParts);
+    if (parts.size() != 2)
+        return kDefaultSize;
+    bool okW = false, okH = false;
+    const int w = parts.at(0).toInt(&okW);
+    const int h = parts.at(1).toInt(&okH);
+    if (!okW || !okH || w < 1 || h < 1)
+        return kDefaultSize;
+    return QSize(w, h);
+}
+
 void MainWindow::newDocument() {
     if (!confirmDiscard())
         return;
@@ -1355,10 +1389,25 @@ void MainWindow::newDocument() {
     m_stack->clear();
     Layer l;
     l.name = tr("Layer 1");
-    l.image = QImage(kDefaultSize, QImage::Format_ARGB32_Premultiplied);
+    l.image = QImage(documentSizeFromDefaults(), QImage::Format_ARGB32_Premultiplied);
     l.image.fill(Qt::transparent);
     m_stack->replaceAll({l}, 0);
-    m_stack->addBackgroundLayer(Qt::white);
+    m_stack->addBackgroundLayer(Settings::defaultBackground());
+    m_canvas->setColors(Settings::defaultPrimary(), Settings::defaultSecondary());
+    m_canvas->setBrushSize(Settings::defaultBrushSize());
+    m_canvas->setBrushStyle(static_cast<BrushStyle>(Settings::defaultBrushStyle()));
+    m_canvas->setShapeStyle(static_cast<ShapeStyle>(Settings::defaultShapeStyle()));
+    if (Settings::defaultShape() > 0) {
+        int seen = 0;
+        for (const auto& s : ToolRegistry::specs()) {
+            if (!s.inShapes) continue;
+            if (seen++ == Settings::defaultShape()) {
+                m_canvas->setShape(static_cast<ShapeKit::Shape>(s.id));
+                break;
+            }
+        }
+    }
+    syncColorWell();
     updateWindowTitle();
 }
 

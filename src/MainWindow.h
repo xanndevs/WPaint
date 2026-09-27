@@ -10,6 +10,10 @@
 
 #include <functional>
 
+namespace Theme {
+enum class Pref;
+}
+
 class QAction;
 class QCloseEvent;
 class QDockWidget;
@@ -99,6 +103,12 @@ private:
     void buildToolbar();
     void buildCentral();
     void buildDocks();
+    // Push every live setting into the widgets that read it. Called once at
+    // startup and again whenever the table reports a change, so a preference
+    // never has two sources of truth.
+    void applySettings();
+    void setThemePreference(Theme::Pref pref);
+    QSize documentSizeFromDefaults() const;
     void buildStatusBar();
     void placeSizePanel();
     bool eventFilter(QObject* watched, QEvent* ev) override;
@@ -156,6 +166,7 @@ private:
     QUndoStack* m_undo;
     CanvasView* m_canvas;
     QScrollArea* m_scrollArea;
+    QAction* m_boundaryHandlesAction = nullptr;
     SizeSliderPanel* m_sizePanel;
     LayersPanel* m_layersPanel;
     CopilotPanel* m_copilotPanel;

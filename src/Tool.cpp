@@ -3,6 +3,7 @@
 #include "CanvasView.h"
 #include "DrawingUtils.h"
 #include "LayerStack.h"
+#include "Settings.h"
 #include "Theme.h"
 
 #include <QColorDialog>
@@ -1062,7 +1063,7 @@ void TextTool::commitForced(CanvasView* c, bool paint) {
     const int layer = c->activeLayerIndex();
     c->beginEdit(layer);
     QPainter p(&c->layerImage(layer));
-    p.setRenderHint(QPainter::TextAntialiasing, true);
+    p.setRenderHint(QPainter::TextAntialiasing, Settings::smoothText());
     const qreal s = 1.0 / c->zoom();
     p.translate(box.left(), box.top());
     p.scale(s, s);

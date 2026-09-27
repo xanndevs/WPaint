@@ -37,6 +37,14 @@ int main(int argc, char** argv) {
     // After the QApplication identity is set, so QSettings lands in the right
     // scope, and before any window reads a setting.
     Settings::load();
+    // Before the window exists: the theme radios in the View menu are built from
+    // Theme::preference(), so a stored choice has to be in place first or the
+    // menu opens showing Light while the app is dark.
+    Theme::setPreference(static_cast<Theme::Pref>(Settings::themePreference()));
+    // Before the window exists: the theme radios in the View menu are built from
+    // Theme::preference(), so a stored choice has to be in place first or the
+    // menu opens showing Light while the app is dark.
+    Theme::setPreference(static_cast<Theme::Pref>(Settings::themePreference()));
 
     MainWindow win;
     win.show();

@@ -2,6 +2,7 @@
 #include "DrawingUtils.h"
 #include "Layer.h"
 #include "LayerStack.h"
+#include "Settings.h"
 #include "Theme.h"
 
 #include <QHBoxLayout>
@@ -27,7 +28,9 @@ QImage thumbFor(const QImage& img, const QSize& out) {
     Draw::checkerboard(p, QRect(QPoint(0, 0), out), 4, tk.checkerLight,
                        tk.checkerDark);
     const QImage thumb =
-        img.scaled(scaled, Qt::KeepAspectRatio, Qt::FastTransformation);
+        img.scaled(scaled, Qt::KeepAspectRatio,
+                   Settings::thumbnailQuality() == 1 ? Qt::SmoothTransformation
+                                                     : Qt::FastTransformation);
     const QPoint pos((out.width() - thumb.width()) / 2,
                      (out.height() - thumb.height()) / 2);
     p.drawImage(pos, thumb);

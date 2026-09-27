@@ -7,16 +7,65 @@ namespace {
 SettingsValues g_values;
 Settings::ChangedCallback g_changed;
 
+// A row per persisted setting. The read/write pair is what makes the table work
+// for more than bools: QSettings stores a QVariant, so a row only has to know
+// how to lift its own field out of the struct and put it back. Without that the
+// whole mechanism is bool-only, and the second non-bool setting would be the
+// thing that forces the rewrite -- so it happens before the first one lands.
 struct Entry {
     const char* key;
-    bool SettingsValues::*field;
+    QVariant (*read)(const SettingsValues&);
+    void (*write)(SettingsValues&, const QVariant&);
 };
 
+// A template argument with a comma inside it would split the macro's arguments,
+// so the two container fields get a name each.
+using ColorList = QVector<QColor>;
+using ShortcutMap = QMap<QString, QString>;
+
+#define WP_SETTING(field, type)                                            \
+    {                                                                       \
+#field,                                                                   \
+        [](const SettingsValues& v) { return QVariant::fromValue(v.field); }, \
+            [](SettingsValues& v, const QVariant& q) { v.field = q.value<type>(); } \
+    }
+
 // Every persisted setting in the app. Adding one is a row here, a field in
-// SettingsValues and a widget in the preferences dialog.
+// SettingsValues and a row in the preferences dialog. Multi-valued settings
+// stay one row each -- the shortcut map and the custom palette are a QMap and a
+// QVector inside one field, not one field per binding or per swatch.
 constexpr Entry kEntries[] = {
-    {"canvas/antialias", &SettingsValues::antialiasCanvas},
+    WP_SETTING(antialiasCanvas, bool),
+    WP_SETTING(crispPixelsWhenMagnified, bool),
+    WP_SETTING(showBoundaryHandles, bool),
+    WP_SETTING(smoothShapes, bool),
+    WP_SETTING(smoothText, bool),
+    WP_SETTING(spaceWheelBrushSize, bool),
+    WP_SETTING(undoLimit, int),
+    WP_SETTING(confirmDiscard, bool),
+    WP_SETTING(thumbnailQuality, int),
+    WP_SETTING(defaultShape, int),
+    WP_SETTING(defaultShapeStyle, int),
+    WP_SETTING(defaultBrushStyle, int),
+    WP_SETTING(defaultBrushSize, int),
+    WP_SETTING(defaultPrimary, QColor),
+    WP_SETTING(defaultSecondary, QColor),
+    WP_SETTING(defaultBackground, QColor),
+    WP_SETTING(defaultCanvasSize, QString),
+    WP_SETTING(palettePreset, int),
+    WP_SETTING(paletteCustom, ColorList),
+    WP_SETTING(shortcuts, ShortcutMap),
+    WP_SETTING(themePreference, int),
 };
+
+#undef WP_SETTING
+
+// The palette always has 20 entries, in the same 10x2 order the toolbar grid
+// uses, whatever a stale or hand-edited config says -- a short list would leave
+// the last row of swatches missing rather than showing a default.
+ColorList defaultCustomPalette() {
+    return ColorList(20, QColor("#FFFFFF"));
+}
 
 } // namespace
 
@@ -25,6 +74,26 @@ namespace Settings {
 const SettingsValues& values() { return g_values; }
 
 bool antialiasCanvas() { return g_values.antialiasCanvas; }
+bool crispPixelsWhenMagnified() { return g_values.crispPixelsWhenMagnified; }
+bool showBoundaryHandles() { return g_values.showBoundaryHandles; }
+bool smoothShapes() { return g_values.smoothShapes; }
+bool smoothText() { return g_values.smoothText; }
+bool spaceWheelBrushSize() { return g_values.spaceWheelBrushSize; }
+int undoLimit() { return g_values.undoLimit; }
+bool confirmDiscard() { return g_values.confirmDiscard; }
+int thumbnailQuality() { return g_values.thumbnailQuality; }
+int defaultShape() { return g_values.defaultShape; }
+int defaultShapeStyle() { return g_values.defaultShapeStyle; }
+int defaultBrushStyle() { return g_values.defaultBrushStyle; }
+int defaultBrushSize() { return g_values.defaultBrushSize; }
+QColor defaultPrimary() { return g_values.defaultPrimary; }
+QColor defaultSecondary() { return g_values.defaultSecondary; }
+QColor defaultBackground() { return g_values.defaultBackground; }
+QString defaultCanvasSize() { return g_values.defaultCanvasSize; }
+int palettePreset() { return g_values.palettePreset; }
+QVector<QColor> paletteCustom() { return g_values.paletteCustom; }
+QMap<QString, QString> shortcuts() { return g_values.shortcuts; }
+int themePreference() { return g_values.themePreference; }
 
 void setChangedCallback(ChangedCallback cb) { g_changed = std::move(cb); }
 
@@ -32,10 +101,10 @@ void apply(const SettingsValues& v) {
     QSettings s;
     bool dirty = false;
     for (const Entry& e : kEntries) {
-        const bool nv = v.*(e.field);
-        if (nv == g_values.*(e.field))
+        const QVariant nv = e.read(v);
+        if (nv == e.read(g_values))
             continue;
-        g_values.*(e.field) = nv;
+        e.write(g_values, nv);
         s.setValue(QLatin1String(e.key), nv);
         dirty = true;
     }
@@ -48,7 +117,9 @@ void resetDefaults() { apply(SettingsValues{}); }
 void load() {
     QSettings s;
     for (const Entry& e : kEntries)
-        g_values.*(e.field) = s.value(QLatin1String(e.key), g_values.*(e.field)).toBool();
+        e.write(g_values, s.value(QLatin1String(e.key), e.read(g_values)));
+    if (g_values.paletteCustom.size() != 20)
+        g_values.paletteCustom = defaultCustomPalette();
 }
 
 } // namespace Settings

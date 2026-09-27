@@ -187,7 +187,7 @@ void CanvasView::bakeActiveObject() {
 
     beginEdit(o.layer);
     QPainter p(&m_stack->layerAt(o.layer).image);
-    p.setRenderHint(QPainter::Antialiasing, true);
+    p.setRenderHint(QPainter::Antialiasing, Settings::smoothShapes());
     paintShapeObject(p, o);
     p.end();
     markDirty(o.layer, region);
@@ -519,6 +519,7 @@ void CanvasView::wheelEvent(QWheelEvent* ev) {
     // and the scroll: Space is already the "don't edit, navigate" modifier
     // here, and a size change is the one thing it can usefully add.
     if (m_spaceDown && m_tool && m_tool->supportsBrushSize() &&
+        Settings::spaceWheelBrushSize() &&
         !(ev->modifiers() & Qt::ControlModifier)) {
         int steps = 0;
         const int angle = ev->angleDelta().y();
@@ -1431,7 +1432,9 @@ void CanvasView::drawWorkspace(QPainter& p) {
     // Blit quality is a user preference: smooth blends the pixels when the
     // document is scaled, nearest keeps them as hard-edged blocks. Only the
     // screen is affected — the layers themselves are never resampled here.
-    p.setRenderHint(QPainter::SmoothPixmapTransform, Settings::antialiasCanvas());
+    const bool smooth = Settings::antialiasCanvas() &&
+                        !(Settings::crispPixelsWhenMagnified() && m_zoom > 1.0);
+    p.setRenderHint(QPainter::SmoothPixmapTransform, smooth);
     for (int i = m_stack->count() - 1; i >= 0; --i) {
         const Layer& l = m_stack->layerAt(i);
         if (!l.visible || l.isBackground || l.image.isNull()) continue;

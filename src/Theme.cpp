@@ -301,11 +301,10 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QTextEdit:focus {
     border-color: %14;
 }
 QComboBox::drop-down { border: none; width: 22px; }
-QComboBox::down-arrow {
-    image: none; border-left: 3.5px solid transparent;
-    border-right: 3.5px solid transparent; border-top: 4px solid %10;
-    margin-right: 8px;
-}
+/* FluentCombo paints its own chevron, tinted like every other glyph. The
+   CSS-border triangle this replaces is not implemented by Qt's style sheet
+   engine and rendered as a small square. */
+QComboBox::down-arrow, #FluentCombo::down-arrow { image: none; width: 0; height: 0; }
 QComboBox QAbstractItemView {
     background: %9; border: 1px solid %5; border-radius: %6;
     selection-background-color: %7; selection-color: %3;
