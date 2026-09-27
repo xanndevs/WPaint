@@ -14,10 +14,6 @@ constexpr int kRowGap = 8;
 FluentToast::FluentToast(QWidget* parent) : QWidget(parent) {
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
     setObjectName("FluentToast");
-    m_rows = new QVBoxLayout(this);
-    m_rows->setContentsMargins(0, 0, 0, 0);
-    m_rows->setSpacing(kRowGap);
-    m_rows->addStretch(1);
 }
 
 QLabel* FluentToast::addRow(const QString& text) {
@@ -30,7 +26,11 @@ QLabel* FluentToast::addRow(const QString& text) {
     label->setObjectName("FluentToastText");
     label->setWordWrap(false);
     line->addWidget(label);
-    m_rows->insertWidget(m_rows->count() - 1, card);
+    // Shown explicitly. A card created while the toast is already on screen --
+    // which is every card after the first -- comes up hidden, and the toast
+    // paints the card's background itself, so the result is a stack of empty
+    // cards: the shape of a notification with nothing in it.
+    card->show();
     return label;
 }
 
@@ -69,12 +69,30 @@ void FluentToast::relayout() {
 
     const auto& t = Theme::tokens();
     QWidget* window = parentWidget();
-    adjustSize();
-    // Two passes: the first size with the previous width, the second with the
-    // width that size implies. A toast that jumps on the way in is the one
-    // thing that would make it feel like a dialog.
-    move(window ? (window->width() - width()) / 2 : 0,
-         window ? qMax(0, window->height() - height() - t.pad * 3) : 0);
+    // The cards are placed by hand rather than by a layout. A QVBoxLayout does
+    // not count a widget that was inserted a moment ago until it has been
+    // through a layout pass, and a card is clipped by the toast it lives in --
+    // so the second notification was drawn on top of the first, both sharing
+    // the height of one. It is not a cosmetic problem: it reads as a single
+    // toast with the wrong text in it, which is what the user reported.
+    const QList<QWidget*> cards = findChildren<QWidget*>(QStringLiteral("FluentToastCard"));
+    int wanted = 0;
+    int y = 0;
+    for (QWidget* card : cards) {
+        wanted = qMax(wanted, card->sizeHint().width());
+        y += card->sizeHint().height();
+        if (card != cards.first())
+            y += kRowGap;
+    }
+    if (wanted > 0 && y > 0)
+        resize(wanted, y);
+    y = 0;
+    for (QWidget* card : cards) {
+        card->setGeometry(0, y, qMax(0, wanted - 1), card->sizeHint().height());
+        y += card->height() + kRowGap;
+    }
+    move(window ? (window->width() - wanted) / 2 : 0,
+         window ? qMax(0, window->height() - y + kRowGap - t.pad * 3) : 0);
     update();
 }
 

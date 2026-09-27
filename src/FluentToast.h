@@ -5,7 +5,6 @@
 #include <QWidget>
 
 class QLabel;
-class QVBoxLayout;
 
 // A transient message that flies out from the bottom edge of the window and
 // takes itself away again.
@@ -42,9 +41,6 @@ private:
 
     QLabel* addRow(const QString& text);
     void dropOldest();
-    void place();
 
-    QWidget* m_host = nullptr;
-    QVBoxLayout* m_rows = nullptr;
     QList<Entry> m_pending;
 };
