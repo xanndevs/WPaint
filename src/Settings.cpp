@@ -5,7 +5,10 @@
 namespace {
 
 SettingsValues g_values;
-Settings::ChangedCallback g_changed;
+// A list, because a second window registers one of these too and a single slot
+// means the newest registration silently takes the change notifications away
+// from the window that was there first.
+QList<Settings::ChangedCallback> g_changed;
 
 // A row per persisted setting. The read/write pair is what makes the table work
 // for more than bools: QSettings stores a QVariant, so a row only has to know
@@ -129,7 +132,7 @@ QVector<QColor> paletteCustom() { return g_values.paletteCustom; }
 QMap<QString, QString> shortcuts() { return g_values.shortcuts; }
 int themePreference() { return g_values.themePreference; }
 
-void setChangedCallback(ChangedCallback cb) { g_changed = std::move(cb); }
+void setChangedCallback(ChangedCallback cb) { g_changed.append(std::move(cb)); }
 
 void apply(const SettingsValues& v) {
     QSettings s;
@@ -142,8 +145,13 @@ void apply(const SettingsValues& v) {
         s.setValue(QLatin1String(e.key), nv);
         dirty = true;
     }
-    if (dirty && g_changed)
-        g_changed();
+    if (dirty) {
+        // A copy: a callback is allowed to register another one while it runs.
+        const QList<ChangedCallback> callbacks = g_changed;
+        for (const ChangedCallback& cb : callbacks)
+            if (cb)
+                cb();
+    }
 }
 
 void resetDefaults() { apply(SettingsValues{}); }

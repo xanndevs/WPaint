@@ -7,6 +7,7 @@
 class QLabel;
 class QLineEdit;
 class QListWidget;
+class QListWidgetItem;
 class QToolButton;
 class LayerStack;
 
@@ -83,6 +84,7 @@ signals:
 private:
     void rebuildList();
     void onCurrentRowChanged(int row);
+    void updateRowLook(QWidget* row, QListWidgetItem* item, bool active);
     void applyActiveProperty(int activeRow);
     void updateHeaderState();
     // The rail's rows and the stack's indices are two different things as soon

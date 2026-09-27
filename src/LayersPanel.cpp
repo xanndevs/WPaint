@@ -19,6 +19,7 @@
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
+#include <QPointer>
 #include <QStyle>
 #include <algorithm>
 #include <functional>
@@ -377,6 +378,15 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
     connect(m_stack, &LayerStack::activeChanged, this,
             &LayersPanel::setActiveLayer);
 
+    // A light/dark flip re-resolves the stylesheet but not the icons: the rail
+    // draws its own, none of them is tagged for the theme's icon sweep, and
+    // without this the rows keep the tints of the mode they were built in.
+    QPointer<LayersPanel> guard(this);
+    Theme::setModeChangedCallback([guard] {
+        if (guard)
+            guard->applyActiveProperty(guard->rowOfIndex(guard->m_stack->activeIndex()));
+    });
+
     rebuildList();
 }
 
@@ -687,8 +697,11 @@ void LayersPanel::rebuildList() {
         rowLayout->addWidget(name, 1);
 
         item->setSizeHint(row->sizeHint());
-        row->setProperty("wpActive", isActive);
         m_list->setItemWidget(item, row);
+        // Built, then made to look like itself: the builder tints every glyph
+        // with the accent for an active row, and this is what takes that back off
+        // a row that is not (or is no longer) the active one.
+        updateRowLook(row, item, isActive);
     }
 
     if (auto* swatch = m_backgroundBar->findChild<QToolButton*>("LayerBackgroundSwatch")) {
@@ -756,34 +769,59 @@ void LayersPanel::updateHeaderState() {
 }
 
 void LayersPanel::applyActiveProperty(int activeRow) {
+    for (int i = 0; i < m_list->count(); ++i)
+        updateRowLook(m_list->itemWidget(m_list->item(i)), m_list->item(i), i == activeRow);
+}
+
+// Everything that decides what a row looks like, in one place.
+//
+// It used to be spread across the row builder (which tints every glyph with the
+// accent when the row is built active) and a repair pass that could only reach
+// some of them, and the gap between those two is what put black chevrons and
+// black group glyphs on a pale panel: the chevron is a child of the thumbnail
+// holder and was skipped for it, the folder glyph is a QLabel and was not looked
+// for at all, and re-polishing the row left the *name* holding the on-accent
+// colour, because the rule that sets it is a descendant rule and Qt caches a
+// resolved rule per widget.
+void LayersPanel::updateRowLook(QWidget* row, QListWidgetItem* item, bool active) {
+    if (!row) return;
     const auto& t = Theme::tokens();
-    for (int i = 0; i < m_list->count(); ++i) {
-        QWidget* rowWidget = m_list->itemWidget(m_list->item(i));
-        if (!rowWidget) continue;
-        const bool active = i == activeRow;
-        rowWidget->setProperty("wpActive", active);
-        // A selection of three rows has to look like a selection of three rows.
-        // With only the active row marked, ctrl-clicking two more changed
-        // nothing on screen, which is indistinguishable from the clicks not
-        // registering -- which is exactly how the multi-select bug presented.
-        if (QListWidgetItem* item = m_list->item(i))
-            rowWidget->setProperty("wpSelected", item->isSelected());
-        rowWidget->style()->unpolish(rowWidget);
-        rowWidget->style()->polish(rowWidget);
-        // Re-polishing does not by itself schedule a repaint, and the row is a
-        // widget inside a viewport rather than the item the view paints -- so
-        // without this the new fill only shows up on the next incidental
-        // repaint of the list, which for a programmatic selection may be never.
-        rowWidget->update();
-        // The active row is filled with the accent, so its glyphs have to
-        // follow to the on-accent colour or they read as dark smudges.
-        for (QToolButton* eye : rowWidget->findChildren<QToolButton*>("LayerEyeBtn")) {
-            if (eye->parent() != rowWidget) continue; // the fold chevron is nested
-            eye->setIcon(Theme::icon(eye->isChecked() ? QStringLiteral("eye")
-                                                       : QStringLiteral("eye-off"),
-                                      18, active ? t.iconOnAccent : t.icon));
-        }
+    const QColor tint = active ? t.iconOnAccent : t.icon;
+    row->setProperty("wpActive", active);
+    // A selection of three rows has to look like a selection of three rows. With
+    // only the active row marked, ctrl-clicking two more changed nothing on
+    // screen, which is indistinguishable from the clicks not registering --
+    // which is exactly how the multi-select bug presented.
+    row->setProperty("wpSelected", item && item->isSelected());
+
+    // The row and every widget under it. Re-polishing does not schedule a repaint
+    // either, and these rows are widgets inside a viewport rather than items the
+    // view paints, so without the update() the change only shows up on the next
+    // incidental repaint of the list -- which for a programmatic selection may be
+    // never.
+    QList<QWidget*> all{row};
+    all += row->findChildren<QWidget*>();
+    for (QWidget* w : all) {
+        w->style()->unpolish(w);
+        w->style()->polish(w);
+        w->update();
     }
+
+    // The eye, and the fold chevron inside the thumbnail holder: both are
+    // LayerEyeBtn, and the chevron is a child of something else, which is not a
+    // reason for it to keep the colour it was built with.
+    const int index = row->property("layerIndex").toInt();
+    const bool known = index >= 0 && index < m_stack->count();
+    for (QToolButton* b : row->findChildren<QToolButton*>(QStringLiteral("LayerEyeBtn"))) {
+        if (b->parent() == row)
+            b->setIcon(Theme::icon(b->isChecked() ? QStringLiteral("eye")
+                                                  : QStringLiteral("eye-off"),
+                                   18, tint));
+        else
+            b->setIcon(foldChevron(known && m_stack->layerAt(index).folded, tint));
+    }
+    if (QLabel* glyph = row->findChild<QLabel*>(QStringLiteral("LayerFolderGlyph")))
+        glyph->setPixmap(Theme::icon("layer-folder", 20, tint).pixmap(20, 20));
 }
 
 void LayersPanel::onCurrentRowChanged(int row) {

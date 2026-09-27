@@ -21,7 +21,10 @@ namespace Theme {
 
 static Mode g_mode = Mode::Light;
 static Pref g_pref = Pref::System;
-static ModeChangedCallback g_modeChanged;
+// A list, not a single callback: the rail and the shell both want to hear about
+// a mode flip, and with one slot the second registration silently replaced the
+// first. Which is not a problem with one window, and becomes one with two.
+static QList<ModeChangedCallback> g_modeChanged;
 static QHash<QString, QIcon> g_iconCache;
 
 static Tokens makeLight() {
@@ -174,19 +177,26 @@ static void ensureSystemWatch() {
     }
 }
 
-static void applyMode() {
+void applyMode() {
     ensureSystemWatch();
     const Mode after = resolveMode();
     if (after == g_mode) return;
     g_mode = after;
     clearIconCache();
     applyStylesheet();
-    reapplyIcons(QApplication::activeWindow());
+    // Every top-level widget, not just the active one: a mode flip is not about
+    // focus, and a second window that is not focused is still a window.
     if (QApplication::instance())
-        for (QWidget* w : QApplication::topLevelWidgets())
+        for (QWidget* w : QApplication::topLevelWidgets()) {
+            reapplyIcons(w);
             w->update();
-    if (g_modeChanged)
-        g_modeChanged();
+        }
+    // A copy: a callback is allowed to register another one while it runs, and
+    // walking the live list would be its own kind of trouble.
+    const QList<ModeChangedCallback> callbacks = g_modeChanged;
+    for (const ModeChangedCallback& cb : callbacks)
+        if (cb)
+            cb();
 }
 
 void setMode(Mode m) {
@@ -203,7 +213,7 @@ void toggleMode() {
     setPreference(resolveMode() == Mode::Dark ? Pref::Light : Pref::Dark);
 }
 
-void setModeChangedCallback(ModeChangedCallback cb) { g_modeChanged = std::move(cb); }
+void setModeChangedCallback(ModeChangedCallback cb) { g_modeChanged.append(std::move(cb)); }
 
 void init() {
     ensureSystemWatch();
