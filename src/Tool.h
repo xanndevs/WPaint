@@ -32,6 +32,7 @@ enum class ToolId {
     ShapeDiamond,
     ShapePentagon,
     ShapeArrow,
+    ShapePointingArrow,
 };
 
 enum class BrushStyle { Round, Square, Spray, Calligraphy };
@@ -47,7 +48,7 @@ enum class ShapeStyle { Outline, Fill, OutlineFill };
 // Shape geometry library, shared by the live preview and the commit draw.
 namespace ShapeKit {
 
-using Shape = ToolId; // ShapeLine..ShapeArrow (leaf of ToolId)
+using Shape = ToolId; // ShapeLine..ShapePointingArrow (leaf of ToolId)
 
 QPainterPath path(Shape shape, const QRectF& rect, const QPainterPath& curve);
 
@@ -58,8 +59,12 @@ void cubicControls(const QPointF& a, const QPointF& b,
                    const QPointF& p2, bool p2Valid,
                    QPointF& c1, QPointF& c2);
 
+// `from`/`to` are the gesture's two endpoints. Most shapes can work from the
+// bounding rect alone, but a pointing arrow is a shaft between two points, so
+// it needs them to place the head.
 void draw(QPainter& p, Shape shape, const QRectF& rect, ShapeStyle style,
-          const QPen& pen, const QBrush& brush, const QPainterPath& curve);
+          const QPen& pen, const QBrush& brush, const QPainterPath& curve,
+          const QPointF& from, const QPointF& to);
 
 QString shapeName(Shape shape);
 

@@ -37,6 +37,33 @@ static QPolygonF regularPolygon(const QRectF& r, int sides, qreal rotationDeg) {
     return pts;
 }
 
+// A pointing arrow is a straight shaft from the press point to the release
+// point with a solid head on the far end; the tip is the release point. The
+// head's width follows the stroke (a head narrower than its own shaft reads as
+// a line running through a blob) and its length is capped by the shaft, so a
+// short drag gives a small head rather than a back-turned one. `baseOut` is
+// where the head starts, which is where the shaft has to stop.
+static QPolygonF arrowHead(const QPointF& from, const QPointF& to, qreal width,
+                           QPointF& baseOut) {
+    QPolygonF pts;
+    baseOut = to;
+    const qreal dx = to.x() - from.x();
+    const qreal dy = to.y() - from.y();
+    const qreal len = std::hypot(dx, dy);
+    if (len < 1e-6) return pts;
+    const qreal ux = dx / len;
+    const qreal uy = dy / len;
+    // qMin rather than qBound: the ceiling is the shaft length, so the two are
+    // not independent bounds and cannot be handed to qBound in that order.
+    const qreal head = qMin(qMax(qreal(3.0) * width, qreal(6.0)), len * 0.75);
+    const qreal half = qMax(qreal(1.4) * width, qreal(2.5));
+    const QPointF base = to - QPointF(ux, uy) * head;
+    const QPointF n(-uy, ux); // unit normal, one of the two head flanks
+    baseOut = base;
+    pts << base + n * half << to << base - n * half;
+    return pts;
+}
+
 QPainterPath path(Shape shape, const QRectF& r, const QPainterPath& curve) {
     if (shape == Shape::ShapeCurve)
         return curve;
@@ -46,6 +73,7 @@ QPainterPath path(Shape shape, const QRectF& r, const QPainterPath& curve) {
     const QPointF c = r.center();
     switch (shape) {
     case Shape::ShapeLine:
+    case Shape::ShapePointingArrow:
         p.moveTo(tl);
         p.lineTo(br);
         break;
@@ -124,14 +152,38 @@ void cubicControls(const QPointF& a, const QPointF& b,
 }
 
 void draw(QPainter& p, Shape shape, const QRectF& r, ShapeStyle style,
-          const QPen& pen, const QBrush& brush, const QPainterPath& curve) {
-    if (shape == Shape::ShapeLine || shape == Shape::ShapeCurve) {
+          const QPen& pen, const QBrush& brush, const QPainterPath& curve,
+          const QPointF& from, const QPointF& to) {
+    if (shape == Shape::ShapeLine || shape == Shape::ShapeCurve ||
+        shape == Shape::ShapePointingArrow) {
         // Lines are always stroked (fill has no area). Use the explicit
         // endpoint path when supplied; it follows the cursor in every
         // quadrant, unlike the bounding-box diagonal.
         p.setPen(pen);
         p.setBrush(Qt::NoBrush);
         const QPainterPath fp = curve.isEmpty() ? path(shape, r, curve) : curve;
+        if (shape == Shape::ShapePointingArrow) {
+            // The head is a filled triangle in the shaft's own colour, drawn
+            // over the stroke: stroking it instead would read as an open
+            // chevron, which is what the toolbar icon for the block arrow
+            // looks like, not a point.
+            QPointF base;
+            const QPolygonF head = arrowHead(from, to, pen.widthF(), base);
+            if (head.isEmpty()) {
+                p.drawPath(fp);
+                return;
+            }
+            // The shaft stops where the head starts. Running it on to the tip
+            // buried it under the head at thin widths -- invisible -- but at
+            // thick ones the shaft was wider than the head and poked out past
+            // both flanks, which is what made it look like a line struck
+            // through a blob.
+            p.drawLine(from, base);
+            p.setPen(Qt::NoPen);
+            p.setBrush(pen.color());
+            p.drawPolygon(head);
+            return;
+        }
         p.drawPath(fp);
         return;
     }
@@ -165,6 +217,7 @@ QString shapeName(Shape shape) {
     case Shape::ShapeDiamond: return QObject::tr("Diamond");
     case Shape::ShapePentagon: return QObject::tr("Pentagon");
     case Shape::ShapeArrow: return QObject::tr("Arrow");
+    case Shape::ShapePointingArrow: return QObject::tr("Pointing arrow");
     default: return QObject::tr("Shape");
     }
 }
@@ -631,16 +684,20 @@ void ShapeTool::paintOverlay(QPainter& p, CanvasView* c) const {
     if (m_shape == ToolId::ShapeCurve) {
         const QPainterPath path = curvePath();
         if (!path.isEmpty())
-            ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path);
-    } else if (m_shape == ToolId::ShapeLine) {
+            ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path,
+                           m_a, m_b);
+    } else if (m_shape == ToolId::ShapeLine ||
+               m_shape == ToolId::ShapePointingArrow) {
         QPainterPath path;
         path.moveTo(m_a);
         path.lineTo(m_b);
-        ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path);
+        ShapeKit::draw(p, m_shape, QRectF(), m_style, pen, fillColor(c), path,
+                       m_a, m_b);
     } else {
         const QRectF r = QRectF(m_a, m_b).normalized();
         if (r.width() < 0.5 && r.height() < 0.5) return;
-        ShapeKit::draw(p, m_shape, r, m_style, pen, fillColor(c), QPainterPath());
+        ShapeKit::draw(p, m_shape, r, m_style, pen, fillColor(c), QPainterPath(),
+                       m_a, m_b);
     }
 
     // boundary guide: dashed box around the shape being painted
@@ -1006,6 +1063,8 @@ static const QList<Spec> g_specs = {
     {ToolId::ShapeDiamond, QObject::tr("Diamond"), "shape-diamond", true, true},
     {ToolId::ShapePentagon, QObject::tr("Pentagon"), "shape-pentagon", true, true},
     {ToolId::ShapeArrow, QObject::tr("Arrow"), "shape-arrow", true, true},
+    {ToolId::ShapePointingArrow, QObject::tr("Pointing arrow"),
+     "shape-pointing-arrow", true, true},
 };
 
 const QList<Spec>& specs() { return g_specs; }

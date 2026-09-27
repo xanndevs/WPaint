@@ -204,11 +204,13 @@ void CanvasView::paintShapeObject(QPainter& p, const ShapeObject& o) const {
         ShapeKit::cubicControls(o.a, o.b, o.c1, a1, o.c2, a2, c1, c2);
         line.moveTo(o.a);
         line.cubicTo(c1, c2, o.b);
-    } else if (o.shape == ToolId::ShapeLine) {
+    } else if (o.shape == ToolId::ShapeLine ||
+               o.shape == ToolId::ShapePointingArrow) {
         line.moveTo(o.a);
         line.lineTo(o.b);
     }
-    ShapeKit::draw(p, o.shape, o.rect, o.style, pen, QBrush(o.fillColor), line);
+    ShapeKit::draw(p, o.shape, o.rect, o.style, pen, QBrush(o.fillColor), line,
+                   o.a, o.b);
 }
 
 void CanvasView::beginSelectionResize(int handle, const QPointF& widget) {
