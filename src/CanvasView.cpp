@@ -342,6 +342,18 @@ QPointF CanvasView::fromImage(const QPointF& image) const {
     return m_canvasOrigin + image * m_zoom;
 }
 
+QPointF CanvasView::clampToDocument(const QPointF& preferred, const QSize& image) const {
+    const QSize doc = imageSize();
+    // One rule for both axes, so they cannot drift apart.
+    const auto clampAxis = [doc](qreal at, int extent) -> qreal {
+        if (doc.width() <= 0 || extent > doc.width())
+            return 0.0; // nothing to fit inside: the top-left corner
+        return qBound<qreal>(0.0, at, doc.width() - extent);
+    };
+    return QPointF(clampAxis(preferred.x(), image.width()),
+                   clampAxis(preferred.y(), image.height()));
+}
+
 QRectF CanvasView::fromImage(const QRectF& image) const {
     return QRectF(fromImage(image.topLeft()), fromImage(image.bottomRight()));
 }
@@ -626,12 +638,34 @@ void CanvasView::liftSelection() {
     update();
 }
 
-void CanvasView::pasteFloating(const QImage& img, const QPointF& topLeft) {
+// Puts an image on the canvas as a floating object: it arrives selected, can be
+// dragged and scaled, and is baked into the active layer when the user clicks
+// away or presses a key.
+//
+// The edit session is opened here rather than at the weld. weldFloating() writes
+// pixels through markDirty() and commitEdit(), and both of those do nothing
+// unless a session is open -- so a pasted image used to be pixels on the canvas
+// with no undo entry behind them, and Ctrl+Z could not take it away again. The
+// snapshot is of the layer the paste is destined for, so undoing the weld puts
+// that layer back exactly as it was, which is the only thing that could have
+// changed.
+void CanvasView::pasteFloating(const QImage& img, const QPointF& topLeft,
+                               const QString& text) {
     if (img.isNull()) return;
-    if (m_floatingActive) weldFloating();
+    const int layer = activeLayerIndex();
+    // A group holds no pixels, and neither does anything inside a folded one, so
+    // there is nowhere for this to land. Bail out rather than accept the paste
+    // and drop it on the floor: the blit into a null image is a silent no-op,
+    // which is indistinguishable from a broken paste.
+    if (!m_stack->isDrawable(layer))
+        return;
+    if (m_floatingActive)
+        weldFloating();
+    beginEdit(layer);
     m_floating = img;
     m_floatingPos = topLeft;
     m_floatingActive = true;
+    m_pendingPasteText = text;
     m_selection = QRectF(m_floatingPos, QSizeF(img.size()))
                       .intersected(QRectF(QPointF(0, 0), QSizeF(imageSize())));
     m_hasSelection = !m_selection.isEmpty();
@@ -647,15 +681,25 @@ void CanvasView::weldFloating(const QString& text) {
     markDirty(layer, QRect(pos, m_floating.size()));
     m_floatingActive = false;
     m_floating = QImage();
-    commitEdit(text.isEmpty() ? tr("Move selection") : text);
+    // A pasted object was given its own label when it arrived, and its weld is
+    // the first time anything is actually written, so that is the moment the undo
+    // entry belongs -- not "Move selection", which is what a moved selection says.
+    QString label = text;
+    if (label.isEmpty())
+        label = m_pendingPasteText.isEmpty() ? tr("Move selection") : m_pendingPasteText;
+    m_pendingPasteText.clear();
+    commitEdit(label);
     update();
 }
 
 void CanvasView::cancelFloating() {
     if (!m_floatingActive) return;
+    // A pasted object opened a session of its own, so this reverts the snapshot
+    // taken when it arrived rather than doing nothing at all.
     revertActiveEdit();
     m_floatingActive = false;
     m_floating = QImage();
+    m_pendingPasteText.clear();
     update();
 }
 

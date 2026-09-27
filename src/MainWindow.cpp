@@ -39,6 +39,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeData>
 #include <QMouseEvent>
 #include <QPaintEvent>
 #include <QPainter>
@@ -480,6 +481,15 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 updateWindowTitle();
                 updateEditActions();
             });
+    // The clipboard belongs to whatever is on screen when you look, and the image
+    // sources that matter are other applications -- a PNG copied in a file
+    // manager, "Copy image" on a page -- so the Edit menu has to be told when
+    // something new arrives rather than only when this window copies something.
+    if (QClipboard* board = QGuiApplication::clipboard()) {
+        connect(board, &QClipboard::dataChanged, this,
+                [this] { updateEditActions(); });
+        connect(board, &QClipboard::changed, this, [this] { updateEditActions(); });
+    }
 
     connect(m_sizePanel, &SizeSliderPanel::sizeChanged, m_canvas,
             &CanvasView::setBrushSize);
@@ -1627,12 +1637,35 @@ void MainWindow::syncStatusSize() {
     m_sizePanel->setSize(m_canvas->brushSize());
 }
 
+// The image on the clipboard, or a null one.
+//
+// QClipboard::image() is the accessor, and it is deliberately the only one: it
+// decodes whatever the owner published, so a PNG copied out of a file manager
+// and "Copy image" on a web page both come through it without the app knowing or
+// caring which mime types they used. Asking mimeData() what is on the clipboard
+// would be more explicit and less portable -- some platform plugins hand back a
+// mime object that cannot answer -- and the answer would not change what happens
+// next. The pixmap fallback is for an owner that publishes a pixmap and nothing
+// else, which some toolkits still do.
+static QImage imageFromClipboard() {
+    const QClipboard* board = QGuiApplication::clipboard();
+    const QImage img = board->image();
+    if (!img.isNull())
+        return img;
+    const QPixmap pm = board->pixmap();
+    return pm.isNull() ? QImage() : pm.toImage();
+}
+
 void MainWindow::updateEditActions() {
     const bool sel = m_canvas->hasSelection();
     m_cutAction->setEnabled(sel);
     m_copyAction->setEnabled(sel);
     m_deleteAction->setEnabled(sel || m_canvas->floatingActive());
-    m_pasteAction->setEnabled(true);
+    // From the clipboard rather than always on. A paste action that is live with
+    // an empty clipboard is a menu item that does nothing when you click it, and
+    // the image sources that matter are other applications: a PNG copied out of
+    // a file manager, or "Copy image" on a page.
+    m_pasteAction->setEnabled(!m_copied.isNull() || !imageFromClipboard().isNull());
 }
 
 void MainWindow::editColor(bool primary) {
@@ -1935,29 +1968,37 @@ void MainWindow::doCopy() {
 
 void MainWindow::doPaste() {
     m_canvas->weldFloating();
-    QImage img = m_copied;
-    if (img.isNull() && QGuiApplication::clipboard()->image().isNull()) {
-        QPixmap pm = QGuiApplication::clipboard()->pixmap();
-        if (!pm.isNull())
-            img = pm.toImage();
-    }
-    if (img.isNull() && !m_copied.isNull())
-        img = m_copied;
+    // Our own copy first: it is the same pixels the clipboard holds, but it does
+    // not go through a decode, and it is what the rail's copy put there.
+    QImage img = !m_copied.isNull() ? m_copied : imageFromClipboard();
     if (img.isNull())
         return;
     img = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
 
-    // Place near the center of the visible viewport.
+    // The middle of what the user can see, in image coordinates.
+    //
+    // The scroll bars and the canvas are two different coordinate systems and
+    // the canvas is not even at the viewport's origin -- it is centred in it
+    // when the document is smaller than the view. Going straight from a scroll
+    // offset to image coordinates assumed all three lined up, and the paste
+    // landed off the edge of the document whenever they did not, which for a
+    // small image in a large window is most of the time.
     const QRect vp = m_scrollArea->viewport()->rect();
-    const QPointF centerWidget(m_scrollArea->horizontalScrollBar()->value() +
-                                   vp.width() / 2.0,
-                               m_scrollArea->verticalScrollBar()->value() +
-                                   vp.height() / 2.0);
-    const QPointF centerImg = m_canvas->toImage(centerWidget);
-    const QPointF topLeft(centerImg.x() - img.width() / 2.0,
-                          centerImg.y() - img.height() / 2.0);
+    const QPoint viewportCentre(m_scrollArea->horizontalScrollBar()->value() +
+                                    vp.width() / 2,
+                                m_scrollArea->verticalScrollBar()->value() +
+                                    vp.height() / 2);
+    const QPointF centerImg =
+        m_canvas->toImage(QPointF(m_canvas->mapFrom(m_scrollArea->viewport(), viewportCentre)));
+    const QPointF topLeft =
+        m_canvas->clampToDocument(QPointF(centerImg.x() - img.width() / 2.0,
+                                          centerImg.y() - img.height() / 2.0),
+                                  img.size());
 
-    m_canvas->pasteFloating(img, topLeft);
+    m_canvas->pasteFloating(img, topLeft, tr("Paste image"));
+    // The Select tool is what makes a floating object draggable and scalable, so
+    // a paste has to arrive with it -- otherwise the paste lands selected and
+    // nothing can be done with it until the user picks the right tool.
     selectTool(ToolId::Select);
     updateEditActions();
 }

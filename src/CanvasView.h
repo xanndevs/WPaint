@@ -60,6 +60,16 @@ public:
     QPointF toImage(const QPointF& widget) const;
     QRectF toImage(const QRectF& widget) const;
     QPointF fromImage(const QPointF& image) const;
+    // Where an image of `image` size should land if it is dropped at `preferred`
+    // (image coordinates): there, but on the document.
+    //
+    // The middle of the visible area is where the user is looking, and it is not
+    // always over the document -- the canvas widget is deliberately larger than
+    // the viewport so it can be panned off-centre, so the middle of the view can
+    // be workspace. A paste that lands there is a paste that has gone missing.
+    // An image wider than the document goes to its top-left corner, which is the
+    // only place its first pixel is visible.
+    QPointF clampToDocument(const QPointF& preferred, const QSize& image) const;
     QRectF fromImage(const QRectF& image) const;
     QSize imageSize() const;
     QPointF canvasOrigin() const { return m_canvasOrigin; }
@@ -119,7 +129,11 @@ public:
 
     // ---- floating selection / clipboard machinery ----
     void liftSelection();                       // cut region to floating
-    void pasteFloating(const QImage& img, const QPointF& topLeft);
+    // `text` is the undo label for the weld, so a paste can say "Paste image" and
+    // a drop can say "Place image" rather than both being called "Move
+    // selection". Refused outright if the active layer cannot hold pixels.
+    void pasteFloating(const QImage& img, const QPointF& topLeft,
+                       const QString& text = QString());
     // Bake the floating selection into the active layer. `text` overrides the
     // undo label for callers that are not moving it (a resize, say).
     void weldFloating(const QString& text = QString());
@@ -261,6 +275,9 @@ private:
     bool m_floatingActive = false;
     QImage m_floating;
     QPointF m_floatingPos; // top-left, image coords
+    // The undo label a floating object was given when it arrived, used by the
+    // weld if it is not given another one there.
+    QString m_pendingPasteText;
     bool m_floatMoving = false;
     QPointF m_floatDragAnchor;   // widget coords where drag started
     QPointF m_floatPosAtDrag;    // image pos at drag start
