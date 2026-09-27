@@ -29,10 +29,6 @@ int main(int argc, char** argv) {
             light = true;
     }
 
-    if (dark)
-        Theme::setMode(Theme::Mode::Dark);
-    else if (light)
-        Theme::setMode(Theme::Mode::Light);
     Theme::init();
     // After the QApplication identity is set, so QSettings lands in the right
     // scope, and before any window reads a setting.
@@ -41,10 +37,15 @@ int main(int argc, char** argv) {
     // Theme::preference(), so a stored choice has to be in place first or the
     // menu opens showing Light while the app is dark.
     Theme::setPreference(static_cast<Theme::Pref>(Settings::themePreference()));
-    // Before the window exists: the theme radios in the View menu are built from
-    // Theme::preference(), so a stored choice has to be in place first or the
-    // menu opens showing Light while the app is dark.
-    Theme::setPreference(static_cast<Theme::Pref>(Settings::themePreference()));
+    // Last, so the flags win. Pinning the mode before the stored preference went
+    // in did nothing at all: setPreference() re-resolves the mode, and the
+    // default preference is System, so --dark rendered a light window and the
+    // dark screenshot that was supposed to be checked was a copy of the light
+    // one. A flag that cannot disagree with the settings is not a flag.
+    if (dark)
+        Theme::setPreference(Theme::Pref::Dark);
+    else if (light)
+        Theme::setPreference(Theme::Pref::Light);
 
     MainWindow win;
     win.show();
