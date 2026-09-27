@@ -19,8 +19,10 @@ an HSV/RGB color editor — all in Qt 6 / C++.
 - Export to PNG / JPEG / BMP / GIF; save/load layered `.wpa` projects
 - Light and dark themes (Ctrl+Shift+T), native High-DPI icon rendering
 - Middle-click drag pans the canvas; Ctrl+wheel zooms at the cursor
-- Preferences dialog (Ctrl+,) with a canvas rendering switch: smooth edges or
-  crisp nearest-neighbour pixels when zoomed in
+- Pointing arrow shape: drag from the press point to the release point
+- Preferences dialog (Ctrl+): behavior, what a new image starts as, and every
+  shortcut — all rebindable
+- Three colour palettes, or twenty swatches of your own
 
 ## Requirements
 
@@ -53,20 +55,43 @@ Optional debug flags used by the smoke-test script:
 
 ## Shortcuts
 
+Every one of these can be changed in **Edit -> Preferences -> Shortcuts**; the table
+below is the default.
+
 | Action        | Shortcut |
 |---------------|----------|
 | New / Open / Save | Ctrl+N / Ctrl+O / Ctrl+S |
 | Save As       | Ctrl+Shift+S |
 | Undo / Redo   | Ctrl+Z / Ctrl+Y (+ Ctrl+Shift+Z) |
 | Cut / Copy / Paste | Ctrl+X / Ctrl+C / Ctrl+V |
-| Select All / Delete | Ctrl+A / Del |
+| Select All / Deselect / Delete | Ctrl+A / Ctrl+Shift+A / Del |
 | Resize & Rotate | Ctrl+E |
 | Zoom In / Out / 100% / Fit | Ctrl++ / Ctrl+- / Ctrl+0 / Ctrl+9 |
+| Theme preference | Ctrl+Shift+T |
 | Preferences | Ctrl+, |
+| Select / Crop / Magnify | M / C / Z |
+| Pencil / Bucket / Text / Eraser / Eyedropper | P / G / T / E / I |
+| Brush / Shapes | B / U |
+| Flip horizontal / vertical | Ctrl+F / Ctrl+Shift+F |
+| Rotate left / right | Ctrl+R / Ctrl+Shift+R |
+| Shape fill mode: next / previous | Ctrl+U / Ctrl+Shift+U |
+| Next / previous shape | Ctrl+Tab / Ctrl+Shift+Tab |
+| Brush size: larger / smaller | ] / [ |
+| Swap color 1 and color 2 | X |
+| Show or hide the layers panel | F7 |
+| Focus the layer above / below | Alt+Up / Alt+Down |
+| Add / duplicate a layer | Ctrl+Shift+N / Ctrl+Shift+D |
+| Move the layer up / down | Ctrl+Shift+Up / Ctrl+Shift+Down |
+
+Gestures that are not key combinations, and so cannot be rebound, are listed on
+the same page: Space + wheel (brush size), Ctrl + wheel (zoom at the pointer),
+middle-drag (pan), the arrow keys (nudge, ×10 with Shift), Space + arrows
+(sketch), Shift + drag (square), Alt + drag (grow from the centre) and Esc
+(cancel).
 
 ## Notes
 
 - Transparency flattens on export; the eyedropper samples over white.
-- Preferences are stored via `QSettings` (`~/.config/WPaint/WPaint.conf`); the
-  canvas rendering switch only affects the screen, never saved files.
+- Preferences are stored via `QSettings` (`~/.config/WPaint/WPaint.conf`); a
+  display preference only affects the screen, never a saved file.
 - The Copilot rail is a visual placeholder for a future model integration.
