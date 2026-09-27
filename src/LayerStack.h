@@ -55,6 +55,50 @@ public:
     void renameLayer(int i, const QString& name);
     void setActiveIndex(int i);
 
+    // ---- folders ----
+    // A folder owns the `childCount` entries after it, so every question about
+    // the tree is answered by walking the list rather than by nesting it.
+    bool isFolder(int i) const;
+    bool isChildOfFolder(int i) const;  // inside any folder, at any depth
+    bool isInsideFoldedFolder(int i) const;
+    int depthOf(int i) const;           // how many folders enclose it
+    int childCountOf(int i) const;
+    QList<int> childrenOf(int i) const; // the direct children, in stack order
+    // Every index the entry takes with it, itself included: for a folder, its
+    // whole run including nested groups.
+    QList<int> spanOf(int i) const;
+    // The outermost folder enclosing `i`, or -1.
+    int owningFolder(int i) const;
+    void setFolded(int i, bool folded);
+    // Wraps one contiguous selection in a folder and returns its index, or -1
+    // when the selection is not a single run. `folded` is the new folder's
+    // initial state; the preference that decides it lives in Settings.
+    int groupInto(const QList<int>& selection, bool folded);
+    bool ungroup(int folderIndex);
+    // Removes a selection -- folders, their children and nested groups -- as one
+    // structural step, fixing up the counts of the folders that survive it.
+    bool removeSpans(const QList<int>& selection);
+
+    // A legal paint target: a real layer, not a folder, not the background, and
+    // not hidden inside a folded one.
+    bool isDrawable(int i) const;
+    // The active layer, or -1 when it cannot be painted on.
+    int drawableIndex() const;
+
+    // Turns a selection into the index runs the structural operations work on:
+    // folders expand to their children, a child whose folder is also selected is
+    // dropped (the folder carries it), and the result is merged and sorted.
+    QList<QList<int>> resolveSelection(const QList<int>& selection) const;
+
+    // A layer may only go if a real, visible-to-the-user layer survives it.
+    bool canRemove(int i) const;
+    bool canRemoveAny(const QList<int>& selection) const;
+    int layerCount() const; // excluding the background
+    // Re-derives every folder's childCount from the entries that follow it.
+    // Public because MainWindow removes runs of layers itself when the
+    // selection spans a group boundary.
+    void fixChildCounts();
+
     QString nextName(const QString& base) const;
     void clear();
 

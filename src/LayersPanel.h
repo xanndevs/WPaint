@@ -1,15 +1,23 @@
 #pragma once
 
 #include <QColor>
+#include <QList>
 #include <QWidget>
 
 class QLabel;
+class QLineEdit;
 class QListWidget;
 class QToolButton;
 class LayerStack;
 
 // Right-side layers dock. Row order matches the stack (index 0 = topmost).
 // Emits requests that MainWindow turns into QUndoCommands.
+//
+// The background is deliberately *not* a row: it has its own pinned section
+// under the list, it is not counted in "Layers (n)", and clicking it opens the
+// colour picker rather than selecting a paint target. Everything else about the
+// rail is the stack in order, with a folder drawn as a folder -- indented
+// children, a chevron that folds it.
 class LayersPanel : public QWidget {
     Q_OBJECT
 public:
@@ -20,11 +28,25 @@ public:
     // selection, eye buttons and hover state intact.
     void updateThumbnails();
     void setActiveLayer(int index);
+    // Select a set of rows, without going through activeRequested.
+    void setSelection(const QList<int>& indices);
 
-    // The caption strip holding the title, the layer count and the add/remove
-    // buttons. MainWindow hands this to QDockWidget::setTitleBarWidget so the
-    // dock doesn't paint a second, competing title above it.
+    QList<int> selectedIndices() const;
+    // The row the user last touched, which is not necessarily the current one
+    // after a ctrl-click extends the selection.
+    int lastSelectedIndex() const { return m_lastSelected; }
+
+    // The caption strip holding the title, the layer count and the
+    // folder/add/remove buttons. MainWindow hands this to
+    // QDockWidget::setTitleBarWidget so the dock doesn't paint a second,
+    // competing title above it.
     QWidget* headerWidget() const { return m_header; }
+
+    // Open the inline rename on a row, from the keyboard or a menu rather than a
+    // double-click.
+    void beginRenameAt(int index);
+
+    bool hasFocus() const;
 
 signals:
     void activeRequested(int layerIndex);
@@ -32,21 +54,40 @@ signals:
     void moveRequested(int from, int to);
     void addRequested();
     void removeRequested(int layerIndex);
+    void removeSelectionRequested(QList<int> selection);
     void renameRequested(int layerIndex, const QString& name);
+    void folderRequested(QList<int> selection);
+    void foldedRequested(int layerIndex, bool folded);
     // The background swatch was clicked; MainWindow opens the colour picker
     // and turns the result into an undoable layer change.
     void backgroundEditRequested(int layerIndex);
+    // A right-click, with the rows it covers.
+    void contextRequested(QList<int> selection, QPoint at);
+    // A rename finished on one row; MainWindow renames the rest of the
+    // selection from the same base name.
+    void renameFinished(int layerIndex, const QString& name,
+                        QList<int> alsoSelected);
 
 private:
     void rebuildList();
     void onCurrentRowChanged(int row);
     void applyActiveProperty(int activeRow);
+    void updateHeaderState();
+    void startRename(int index);
+    void commitRename();
 
     LayerStack* m_stack;
     QListWidget* m_list;
     QLabel* m_count;
     QWidget* m_header = nullptr;
+    QToolButton* m_folder;
     QToolButton* m_add;
     QToolButton* m_remove;
+    QWidget* m_backgroundBar = nullptr;
     bool m_syncing = false;
+    int m_lastSelected = -1;
+    // The inline rename editor, when one is open.
+    int m_renamingIndex = -1;
+    QLineEdit* m_renameEdit = nullptr;
+    QList<int> m_renameAlso;
 };

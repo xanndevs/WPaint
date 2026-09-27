@@ -32,6 +32,9 @@
     <file>assets/icons/copilot.svg</file>
     <file>assets/icons/layer-add.svg</file>
     <file>assets/icons/layer-delete.svg</file>
+    <file>assets/icons/layer-delete-disabled.svg</file>
+    <file>assets/icons/layer-add-disabled.svg</file>
+    <file>assets/icons/layer-folder.svg</file>
     <file>assets/icons/layer-stack.svg</file>
     <file>assets/icons/undo.svg</file>
     <file>assets/icons/redo.svg</file>
@@ -48,6 +51,7 @@
     <file>assets/icons/close.svg</file>
     <file>assets/icons/check.svg</file>
     <file>assets/icons/chevron-down.svg</file>
+    <file>assets/icons/chevron-right.svg</file>
     <file>assets/icons/delete.svg</file>
     <file>assets/icons/zoom-actual.svg</file>
     <file>assets/icons/zoom-fit.svg</file>

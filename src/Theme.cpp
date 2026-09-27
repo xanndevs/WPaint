@@ -467,6 +467,16 @@ QDialog { background: %4; }
     min-width: 0; min-height: 0;
 }
 #LayerBackgroundSwatch:hover { border-color: %14; }
+/* The background is a document property, not a layer, so it gets its own
+   pinned strip under the list rather than a row that looks like the rest. */
+#LayerBackgroundBar { background: %4; border-top: 1px solid %5; }
+#LayerNameEdit {
+    background: %9; border: 1px solid %14; border-radius: %6; padding: 2px 4px;
+    color: %3; font-weight: 600;
+}
+#LayerFolderGlyph { background: transparent; }
+#FluentToastCard { background: transparent; border: none; }
+#FluentToastText { color: %3; background: transparent; }
 
 /* ---- Floating brush-size panel ---- */
 #SizeSliderPanel {

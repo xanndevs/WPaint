@@ -15,6 +15,7 @@ qt_add_executable(wpaint
     src/Theme.cpp
     src/DrawingUtils.cpp
     src/FluentCombo.cpp
+    src/FluentToast.cpp
     src/FluentSlider.cpp
     src/FluentSwitch.cpp
     src/ColorState.cpp
