@@ -5,6 +5,7 @@
 
 #include <QGraphicsDropShadowEffect>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -17,24 +18,33 @@ namespace {
 // A number that behaves like a spin box only once you click it. Before that it
 // is inert, so the panel reads as a plain caption and a stray click cannot drop
 // a caret into it; clicking turns it into a real field, and it goes inert again
-// when focus leaves.
+// when focus leaves. The click has to be caught on the line edit, not on the
+// spin box: the line edit is the child that actually sits under the cursor, so a
+// press on it never reaches QSpinBox::mousePressEvent.
 class ValueBox : public QSpinBox {
 public:
-    using QSpinBox::QSpinBox;
+    explicit ValueBox(QWidget* parent = nullptr) : QSpinBox(parent) {
+        lineEdit()->installEventFilter(this);
+    }
 
 protected:
     void mousePressEvent(QMouseEvent* ev) override {
         if (isReadOnly()) {
-            setReadOnly(false);
-            setProperty("wpEditing", 1);
-            style()->unpolish(this);
-            style()->polish(this);
-            selectAll();
-            setFocus(Qt::MouseFocusReason);
+            beginEdit();
             ev->accept();
             return;
         }
         QSpinBox::mousePressEvent(ev);
+    }
+
+    bool eventFilter(QObject* watched, QEvent* ev) override {
+        if (watched == lineEdit() && ev->type() == QEvent::MouseButtonPress &&
+            isReadOnly()) {
+            beginEdit();
+            static_cast<QMouseEvent*>(ev)->accept();
+            return true;
+        }
+        return QSpinBox::eventFilter(watched, ev);
     }
 
     void focusOutEvent(QFocusEvent* ev) override {
@@ -43,6 +53,16 @@ protected:
         style()->unpolish(this);
         style()->polish(this);
         QSpinBox::focusOutEvent(ev);
+    }
+
+private:
+    void beginEdit() {
+        setReadOnly(false);
+        setProperty("wpEditing", 1);
+        style()->unpolish(this);
+        style()->polish(this);
+        selectAll();
+        setFocus(Qt::MouseFocusReason);
     }
 };
 
