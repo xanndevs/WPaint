@@ -266,7 +266,6 @@ QToolButton:checked:hover { background: %15; }
 QToolButton:disabled { background: %16; }
 QToolButton[wpFlat="1"] { min-width: 0px; min-height: 0px; padding: 3px 4px; }
 QToolButton[wpBig="1"] { min-width: %26px; min-height: %26px; }
-QToolButton#MenuButtonPopup { padding-bottom: %30px; }
 /* A split button highlights only the piece under the pointer, so the generic
    whole-button hover has to get out of its way. A split button that is also
    active stays fully accent -- hover then only tints the hovered piece. */
@@ -515,8 +514,7 @@ QDialog { background: %4; }
         .arg(4)                     // %27 popup buttons bottom padding
         .arg(t.radiusXl)            // %28 floating panel radius
         .arg(t.caretBand)            // %29 gallery chevron strip height
-        .arg(t.caretPad)             // %30 bottom padding below a gallery glyph
-        .arg(t.caretGlyph);          // %31 gallery caret glyph size
+        .arg(t.caretGlyph);          // %30 gallery caret glyph size
 }
 
 // ------------------------------------------------------------- icons -----

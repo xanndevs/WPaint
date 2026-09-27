@@ -231,43 +231,41 @@ protected:
     }
 
     void paintEvent(QPaintEvent* e) override {
-        if (!m_split) {
-            // A menu-only button has no zone to divide, so let the style paint it
-            // exactly like every other toolbar button and just add the caret.
-            QToolButton::paintEvent(e);
-            if (!menu()) return;
-            QPainter p(this);
-            p.setRenderHint(QPainter::Antialiasing, true);
-            paintCaret(p, height() - caretBand() / 2);
-            return;
-        }
-
-        // A split button paints itself, because the highlight has to go *behind*
-        // the glyph. The base widget draws background then glyph, and anything
-        // we paint afterwards lands on top of the glyph -- so a fill either hides
-        // the tool (opaque) or stains it (translucent). Neither is right, and
-        // neither is fixable after the fact. Drawing the background first and the
-        // glyph over it is the only way to light the button up without touching
-        // the artwork. The stylesheet contributes nothing else to these buttons
-        // beyond a transparent background, a transparent 1px border and the
-        // radius, all three reproduced below.
+        Q_UNUSED(e);
+        // Every gallery button paints itself, because the highlight has to go
+        // *behind* the glyph. The base widget draws background then glyph, and
+        // anything we paint afterwards lands on top of the glyph -- so a fill
+        // either hides the tool (opaque) or stains it (translucent). Neither is
+        // right, and neither is fixable after the fact. Drawing the background
+        // first and the glyph over it is the only way to light the button up
+        // without touching the artwork. The stylesheet contributes nothing else
+        // to these buttons beyond a transparent background, a transparent 1px
+        // border and the radius, all three reproduced below.
         const auto& t = Theme::tokens();
         const int band = caretBand();
         QPainter p(this);
         p.setRenderHint(QPainter::Antialiasing, true);
 
         if (isChecked()) {
-            p.setPen(QPen(t.accent, 1));
-            p.setBrush(t.accent);
-            p.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5),
-                              t.radiusSm, t.radiusSm);
+            // A checked button still has to answer the pointer: the plain
+            // QToolButton gets accentHover from :checked:hover, and these paint
+            // their own fill, so without this they went dead under the mouse.
+            p.setPen(Qt::NoPen);
+            p.setBrush(m_inWidget ? t.accentHover : t.accent);
+            p.drawRoundedRect(QRectF(rect()), t.radiusSm, t.radiusSm);
         } else if (m_inWidget) {
             // controlHover at full strength. This used to be translucent so the
             // glyph could survive being painted over; now the glyph goes on top
             // of the fill, so the highlight can be the real colour.
             p.setPen(Qt::NoPen);
             p.setBrush(t.controlHover);
-            if (m_hoverMenu)
+            // A split button lights up one zone at a time, and fillZone rounds
+            // only the corners that zone owns. A whole-surface button has no
+            // inner edge, so it needs all four corners rounded -- the old
+            // QSS-driven path did that for free, the painter has to ask.
+            if (!m_split)
+                p.drawRoundedRect(QRectF(rect()), t.radiusSm, t.radiusSm);
+            else if (m_hoverMenu)
                 fillZone(p, QRectF(0, height() - band, width(), band),
                          /*roundTop=*/false, t.radiusSm);
             else
@@ -275,16 +273,18 @@ protected:
                          /*roundTop=*/true, t.radiusSm);
         }
 
-        // The glyph, centred on the part of the button that selects the tool so
-        // it is optically centred in its own half rather than in the whole box.
-        const QRect area(0, 0, width(), height() - band);
+        // The glyph is centred on the whole box, exactly like every other
+        // toolbar button, then lifted by glyphLift: geometric centring reads as
+        // sitting low next to the plain big buttons, and the chevron strip owns
+        // the space the lift frees. Centring on the box minus the band instead
+        // (what this used to do) put the glyph 7px high, and that was worse.
         const QSize is = iconSize();
         if (!icon().isNull() && is.width() > 0 && is.height() > 0) {
             const qreal dpr = qMax<qreal>(2.0, devicePixelRatioF());
             const QPixmap pm = icon().pixmap(is, dpr);
             if (!pm.isNull())
-                p.drawPixmap(QPoint(area.center().x() - is.width() / 2,
-                                    area.center().y() - is.height() / 2),
+                p.drawPixmap(QPoint(width() / 2 - is.width() / 2,
+                                    height() / 2 - is.height() / 2 - t.glyphLift),
                              pm);
         }
 
@@ -714,21 +714,37 @@ auto* selBtn = toolButtonFor(ToolId::Select);
     }
     bar->addWidget(divider());
 
-    // Image
+    // Image: two rows of three (crop / flips on top, magnify / rotates below)
+    // with the big resize button keeping its own spanning column.
     {
         QList<QWidget*> c;
         c << toolButtonFor(ToolId::Crop);
 
-        auto* flipBtn = new QToolButton(bar);
-        flipBtn->setToolTip(tr("Flip horizontal"));
-        Theme::setIcon(flipBtn, "flip-horizontal");
-        connect(flipBtn, &QToolButton::clicked, this, [this] {
+        auto* flipH = new QToolButton(bar);
+        flipH->setToolTip(tr("Flip horizontal"));
+        Theme::setIcon(flipH, "flip-horizontal");
+        connect(flipH, &QToolButton::clicked, this, [this] {
             if (m_canvas->hasSelection())
                 m_canvas->flipSelection(Qt::Horizontal);
             else
                 m_canvas->flipCanvas(Qt::Horizontal);
         });
-        c << flipBtn;
+        c << flipH;
+
+        auto* flipV = new QToolButton(bar);
+        flipV->setToolTip(tr("Flip vertical"));
+        Theme::setIcon(flipV, "flip-vertical");
+        connect(flipV, &QToolButton::clicked, this, [this] {
+            if (m_canvas->hasSelection())
+                m_canvas->flipSelection(Qt::Vertical);
+            else
+                m_canvas->flipCanvas(Qt::Vertical);
+        });
+        c << flipV;
+
+        auto* magnifyBtn = toolButtonFor(ToolId::Magnify);
+        magnifyBtn->setToolTip(tr("Magnify (right-click zooms out)"));
+        c << magnifyBtn;
 
         auto* rotL = new QToolButton(bar);
         rotL->setToolTip(tr("Rotate left"));
@@ -754,10 +770,10 @@ auto* selBtn = toolButtonFor(ToolId::Select);
 
         // The resize button belongs to the Image cluster rather than a cluster
         // of its own: splitting it off left the "Image" caption centred over
-        // only the four small buttons, with the resize button hanging outside
+        // only the small buttons, with the resize button hanging outside
         // the text. Keeping it here lets the caption centre over the whole
-        // group, and the grid already gives a wpBig control a column of its
-        // own spanning both rows.
+        // group, and the grid gives a wpBig control a column of its own
+        // spanning both rows.
         auto* resizeBtn = new QToolButton(this);
         const int big = 2 * Theme::tokens().toolbarBtn;
         const int iconPx = 2 * 20;
@@ -770,7 +786,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
                 [this] { openResizeDialog(); });
         c << resizeBtn;
 
-        bar->addWidget(toolCluster(tr("Image"), c));
+        bar->addWidget(toolCluster(tr("Image"), c, 3));
     }
     bar->addWidget(divider());
 
@@ -976,7 +992,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
 }
 
 QWidget* MainWindow::toolCluster(const QString& caption,
-                                 const QList<QWidget*>& controls) {
+                                 const QList<QWidget*>& controls, int cols) {
     const auto& t = Theme::tokens();
     auto* host = new QWidget(this);
     auto* v = new QVBoxLayout(host);
@@ -989,7 +1005,7 @@ QWidget* MainWindow::toolCluster(const QString& caption,
         return w->sizeHint().width();
     };
 
-    // Two-row grid: the top row is two standard buttons wide; a control that
+    // Two-row grid: the top row is `cols` standard buttons wide; a control that
     // no longer fits wraps onto the second row. Buttons render wider than the
     // toolbarBtn token (QSS padding + border), so measure a real control.
     auto* rows = new QWidget(host);
@@ -1001,7 +1017,7 @@ QWidget* MainWindow::toolCluster(const QString& caption,
     grid->setRowStretch(1, 1);
 
     const int btn = controls.isEmpty() ? t.toolbarBtn : itemWidth(controls.first());
-    const int budget = 2 * btn + grid->horizontalSpacing();
+    const int budget = cols * btn + (cols - 1) * grid->horizontalSpacing();
     const int big = 2 * t.toolbarBtn;
 
     int row = 0;
@@ -1014,11 +1030,12 @@ QWidget* MainWindow::toolCluster(const QString& caption,
             used = budget;
             continue;
         }
-        if (row == 0 && used > 0 && used + w > budget)
-            row = 1;
+        if (used > 0 && (used + w > budget || col[row] >= cols)) {
+            row = 1 - row;
+            used = 0;
+        }
         grid->addWidget(c, row, col[row]++);
-        if (row == 0)
-            used += w;
+        used += w;
     }
 
     auto* cap = new QLabel(caption, host);

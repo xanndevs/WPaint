@@ -980,8 +980,10 @@ void CanvasView::mousePressEvent(QMouseEvent* ev) {
         ev->accept();
         return;
     }
-    // canvas boundary handles (any tool)
-    if (m_showBoundaryHandles && m_tool && left) {
+    // canvas boundary handles (any tool that edits, but not the magnifier:
+    // a zoom click near an edge should zoom, not resize the canvas)
+    if (m_showBoundaryHandles && m_tool && left &&
+        m_tool->id() != ToolId::Magnify) {
         const int handle = handleAtWidget(ev->position());
         if (handle >= 0) {
             bakeActiveObject();
@@ -1034,7 +1036,8 @@ void CanvasView::mouseMoveEvent(QMouseEvent* ev) {
             if (h >= 0) cur = resizeCursorForHandle(h);
         }
     }
-    if (cur == Qt::ArrowCursor && m_showBoundaryHandles && m_tool) {
+    if (cur == Qt::ArrowCursor && m_showBoundaryHandles && m_tool &&
+        m_tool->id() != ToolId::Magnify) {
         const int h = handleAtWidget(ev->position());
         if (h >= 0) cur = resizeCursorForHandle(h);
     }

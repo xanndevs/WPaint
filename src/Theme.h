@@ -78,11 +78,14 @@ struct Tokens {
     int sliderGroove = 6;
     int sliderHandle = 16;
     // Gallery buttons that open a menu from a chevron strip: the strip's
-    // height, the bottom padding that keeps the glyph clear of it, and the
-    // caret size itself.
-    int caretBand = 15;
-    int caretPad = 10;
-    int caretGlyph = 12;
+    // height, which is also how much taller the tool-select zone is than the
+    // strip, and the caret size itself.
+    int caretBand = 14;
+    int caretGlyph = 11;
+    // Optical lift of a gallery button's glyph: geometric centring reads as
+    // sitting low next to the plain big buttons, and the chevron strip takes
+    // the space the lift frees up.
+    int glyphLift = 5;
 
     // Type
     QString fontFamily;

@@ -102,7 +102,10 @@ private:
     void buildStatusBar();
     void placeSizePanel();
     bool eventFilter(QObject* watched, QEvent* ev) override;
-    QWidget* toolCluster(const QString& caption, const QList<QWidget*>& controls);
+    // `cols` standard buttons per row; a wpBig control always takes a column
+    // of its own spanning both rows.
+    QWidget* toolCluster(const QString& caption, const QList<QWidget*>& controls,
+                         int cols = 2);
     QWidget* divider();
     QToolButton* toolButtonFor(ToolId id, int size = 0);
 
