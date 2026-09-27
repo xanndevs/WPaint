@@ -11,6 +11,7 @@
 #include "ResizeDialog.h"
 #include "Settings.h"
 #include "SettingsDialog.h"
+#include "Shortcuts.h"
 #include "SizeSliderPanel.h"
 #include "Theme.h"
 
@@ -437,7 +438,12 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // itself has to be rebuilt. What the changed-callback has to cover grows as
     // the table does, so it is one function rather than a lambda that only knows
     // about the first setting.
-    Settings::setChangedCallback([this] { applySettings(); });
+    Settings::setChangedCallback([this] {
+        applySettings();
+        // A rebind has to take effect with the dialog still open, or the page
+        // would only be showing you what the next launch would look like.
+        applyShortcuts();
+    });
     applySettings();
 
     buildActions();
@@ -509,45 +515,61 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 // ------------------------------------------------------------ actions -----
 
 void MainWindow::buildActions() {
+    // Every shortcut in the app is bound through here, by id rather than by
+    // sequence: the Shortcuts page stores an override against the id, so a
+    // binding can be changed at runtime without the page holding a QAction, and
+    // a menu-less action -- the flip buttons, the shape gallery -- gets a
+    // binding for free. WindowShortcut is deliberate: it makes a *disabled*
+    // action block the key rather than letting it fall through to the focused
+    // child, which is what makes Cut work on a selection that has nothing to
+    // cut in the usual sense.
     auto overrideShortcut = [this](QAction* a, const QKeySequence& seq) {
         a->setShortcut(seq);
         a->setShortcutContext(Qt::WindowShortcut);
     };
+    m_shortcutActions = new QHash<QString, QAction*>;
+    auto bind = [this, &overrideShortcut](QAction* a, const QString& id) {
+        if (const Shortcuts::Entry* e = Shortcuts::find(id)) {
+            overrideShortcut(a, Shortcuts::effective(*e));
+            m_shortcutActions->insert(id, a);
+        }
+        return a;
+    };
 
     // File
     QAction* newAct = new QAction(tr("New"), this);
-    overrideShortcut(newAct, QKeySequence::New);
+    bind(newAct, QStringLiteral("file.new"));
     Theme::setActionIcon(newAct, "new");
     connect(newAct, &QAction::triggered, this, &MainWindow::newDocument);
 
     QAction* openAct = new QAction(tr("Open..."), this);
-    overrideShortcut(openAct, QKeySequence::Open);
+    bind(openAct, QStringLiteral("file.open"));
     Theme::setActionIcon(openAct, "open");
     connect(openAct, &QAction::triggered, this, &MainWindow::openDocument);
 
     QAction* saveAct = new QAction(tr("Save"), this);
-    overrideShortcut(saveAct, QKeySequence::Save);
+    bind(saveAct, QStringLiteral("file.save"));
     Theme::setActionIcon(saveAct, "save");
     connect(saveAct, &QAction::triggered, this, &MainWindow::saveDocument);
 
     QAction* saveAsAct = new QAction(tr("Save As..."), this);
-    overrideShortcut(saveAsAct, QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_S));
+    bind(saveAsAct, QStringLiteral("file.saveAs"));
     Theme::setActionIcon(saveAsAct, "save");
     connect(saveAsAct, &QAction::triggered, this, &MainWindow::saveDocumentAs);
 
     QAction* exitAct = new QAction(tr("Exit"), this);
     exitAct->setMenuRole(QAction::QuitRole);
-    overrideShortcut(exitAct, QKeySequence::Quit);
+    bind(exitAct, QStringLiteral("file.exit"));
     Theme::setActionIcon(exitAct, "close");
     connect(exitAct, &QAction::triggered, this, &MainWindow::close);
 
     // Edit
     m_undoAction = new QAction(tr("Undo"), this);
-    overrideShortcut(m_undoAction, QKeySequence::Undo);
+    bind(m_undoAction, QStringLiteral("edit.undo"));
     connect(m_undoAction, &QAction::triggered, this, &MainWindow::doUndo);
     Theme::setActionIcon(m_undoAction, "undo");
     m_redoAction = new QAction(tr("Redo"), this);
-    overrideShortcut(m_redoAction, QKeySequence::Redo);
+    bind(m_redoAction, QStringLiteral("edit.redo"));
     Theme::setActionIcon(m_redoAction, "redo");
     connect(m_redoAction, &QAction::triggered, this, &MainWindow::doRedo);
     QAction* redoAlt = new QAction(tr("Redo (alt)"), this);
@@ -560,61 +582,189 @@ void MainWindow::buildActions() {
     m_undoAction->setEnabled(false);
 
     m_cutAction = new QAction(tr("Cut"), this);
-    overrideShortcut(m_cutAction, QKeySequence::Cut);
+    bind(m_cutAction, QStringLiteral("edit.cut"));
     Theme::setActionIcon(m_cutAction, "cut");
     connect(m_cutAction, &QAction::triggered, this, &MainWindow::doCut);
 
     m_copyAction = new QAction(tr("Copy"), this);
-    overrideShortcut(m_copyAction, QKeySequence::Copy);
+    bind(m_copyAction, QStringLiteral("edit.copy"));
     Theme::setActionIcon(m_copyAction, "copy");
     connect(m_copyAction, &QAction::triggered, this, &MainWindow::doCopy);
 
     m_pasteAction = new QAction(tr("Paste"), this);
-    overrideShortcut(m_pasteAction, QKeySequence::Paste);
+    bind(m_pasteAction, QStringLiteral("edit.paste"));
     Theme::setActionIcon(m_pasteAction, "paste");
     connect(m_pasteAction, &QAction::triggered, this, &MainWindow::doPaste);
 
     m_selectAllAction = new QAction(tr("Select All"), this);
-    overrideShortcut(m_selectAllAction, QKeySequence::SelectAll);
+    bind(m_selectAllAction, QStringLiteral("edit.selectAll"));
     Theme::setActionIcon(m_selectAllAction, "select");
     connect(m_selectAllAction, &QAction::triggered, this, &MainWindow::doSelectAll);
 
     m_deleteAction = new QAction(tr("Delete"), this);
-    overrideShortcut(m_deleteAction, QKeySequence::Delete);
+    bind(m_deleteAction, QStringLiteral("edit.delete"));
     Theme::setActionIcon(m_deleteAction, "delete");
     connect(m_deleteAction, &QAction::triggered, this, &MainWindow::doDelete);
 
     QAction* resizeAct = new QAction(tr("Resize and Rotate..."), this);
-    overrideShortcut(resizeAct, QKeySequence(Qt::CTRL | Qt::Key_E));
+    bind(resizeAct, QStringLiteral("image.resize"));
     Theme::setActionIcon(resizeAct, "resize");
     connect(resizeAct, &QAction::triggered, this, [this] { openResizeDialog(); });
 
     QAction* prefsAct = new QAction(tr("Preferences..."), this);
-    overrideShortcut(prefsAct, QKeySequence(Qt::CTRL | Qt::Key_Comma));
+    bind(prefsAct, QStringLiteral("edit.preferences"));
     Theme::setActionIcon(prefsAct, "settings");
     connect(prefsAct, &QAction::triggered, this, [this] {
         SettingsDialog dlg(this);
         dlg.exec();
     });
 
+    // ---- key-only actions ----
+    // These have no menu row of their own: the toolbar already shows them, and a
+    // menu entry that only exists to carry a letter is clutter. They still get an
+    // id, so they appear on the Shortcuts page and can be rebound.
+    auto toolShortcut = [this, &bind](ToolId tool, const char* id) {
+        auto* a = new QAction(tr("Select the %1 tool").arg(ToolRegistry::spec(tool).name), this);
+        connect(a, &QAction::triggered, this, [this, tool] { selectTool(tool); });
+        bind(a, QString::fromLatin1(id));
+    };
+    toolShortcut(ToolId::Select, "tool.select");
+    toolShortcut(ToolId::Pencil, "tool.pencil");
+    toolShortcut(ToolId::Fill, "tool.fill");
+    toolShortcut(ToolId::Text, "tool.text");
+    toolShortcut(ToolId::Eraser, "tool.eraser");
+    toolShortcut(ToolId::Eyedropper, "tool.eyedropper");
+    toolShortcut(ToolId::Crop, "image.crop");
+    toolShortcut(ToolId::Magnify, "image.magnify");
+    toolShortcut(ToolId::Brush, "brush.gallery");
+
+    auto galleryShortcut = [this, &bind](const QString& label, const char* id,
+                                         const std::function<void()>& fn) {
+        auto* a = new QAction(label, this);
+        connect(a, &QAction::triggered, this, fn);
+        bind(a, QString::fromLatin1(id));
+    };
+    galleryShortcut(tr("Shapes"), "shape.gallery",
+                    [this] { selectTool(m_canvas->currentShape()); });
+
+    // ---- image transforms, shared by the toolbar and the keyboard ----
+    // The toolbar buttons used to own these lambdas; the actions own them now so
+    // a shortcut and a click cannot drift apart.
+    auto transform = [this, &bind](const QString& label, const char* id,
+                                   const std::function<void()>& fn) {
+        auto* a = new QAction(label, this);
+        connect(a, &QAction::triggered, this, fn);
+        m_imageTransforms.insert(QString::fromLatin1(id), fn);
+        bind(a, QString::fromLatin1(id));
+        return a;
+    };
+    auto flip = [this](Qt::Orientation o) {
+        if (m_canvas->hasSelection())
+            m_canvas->flipSelection(o);
+        else
+            m_canvas->flipCanvas(o);
+    };
+    transform(tr("Flip horizontal"), "image.flipH",
+               [this, flip] { flip(Qt::Horizontal); });
+    transform(tr("Flip vertical"), "image.flipV",
+               [this, flip] { flip(Qt::Vertical); });
+    transform(tr("Rotate left 90 degrees"), "image.rotateLeft", [this] {
+        if (m_canvas->hasSelection())
+            m_canvas->rotateSelection(-90);
+        else
+            m_canvas->rotateCanvas(-90);
+    });
+    transform(tr("Rotate right 90 degrees"), "image.rotateRight", [this] {
+        if (m_canvas->hasSelection())
+            m_canvas->rotateSelection(90);
+        else
+            m_canvas->rotateCanvas(90);
+    });
+    // Deselect has no toolbar button but is a normal Edit-menu command.
+    {
+        auto* a = new QAction(tr("Deselect"), this);
+        connect(a, &QAction::triggered, this, [this] {
+            m_canvas->clearSelection();
+            updateEditActions();
+        });
+        bind(a, QStringLiteral("edit.deselect"));
+    }
+    {
+        auto* a = new QAction(tr("Swap color 1 and color 2"), this);
+        connect(a, &QAction::triggered, this, [this] {
+            m_canvas->setColors(m_canvas->secondary(), m_canvas->primary());
+            syncColorWell();
+        });
+        bind(a, QStringLiteral("color.swap"));
+    }
+    // The fill mode cycles forward from wherever it is and wraps, so the key
+    // always means "the next one" rather than a fixed target.
+    auto cycleFillMode = [this, &bind](const char* id, int step) {
+        auto* a = new QAction(step > 0 ? tr("Shape fill mode: next")
+                                       : tr("Shape fill mode: previous"),
+                              this);
+        connect(a, &QAction::triggered, this, [this, step] {
+            const int count = int(kShapeStyles.size());
+            const int next = (int(m_canvas->currentShapeStyle()) + step + count) % count;
+            applyShapeStyle(kShapeStyles.at(next));
+            if (m_shapeStyleMenu)
+                m_shapeStyleMenu->actions().at(next)->setChecked(true);
+        });
+        bind(a, QString::fromLatin1(id));
+    };
+    cycleFillMode("shape.fillModeNext", 1);
+    cycleFillMode("shape.fillModePrev", -1);
+
+    auto stepBrush = [this, &bind](const char* id, int delta) {
+        auto* a = new QAction(delta > 0 ? tr("Brush size: larger")
+                                        : tr("Brush size: smaller"),
+                              this);
+        connect(a, &QAction::triggered, this,
+                [this, delta] { m_canvas->setBrushSize(m_canvas->brushSize() + delta); });
+        bind(a, QString::fromLatin1(id));
+    };
+    stepBrush("brush.larger", 1);
+    stepBrush("brush.smaller", -1);
+
+    auto stepShape = [this, &bind](const char* id, int step) {
+        auto* a = new QAction(step > 0 ? tr("Next shape") : tr("Previous shape"), this);
+        connect(a, &QAction::triggered, this, [this, step] {
+            QList<ToolId> shapes;
+            for (const auto& sp : ToolRegistry::specs())
+                if (sp.inShapes)
+                    shapes << sp.id;
+            if (shapes.isEmpty()) return;
+            int at = shapes.indexOf(m_canvas->currentShape());
+            if (at < 0) at = 0;
+            const int next = (at + step + shapes.size()) % shapes.size();
+            applyShape(static_cast<ShapeKit::Shape>(shapes.at(next)));
+            selectTool(shapes.at(next));
+        });
+        bind(a, QString::fromLatin1(id));
+    };
+    stepShape("shape.next", 1);
+    stepShape("shape.previous", -1);
+
+    buildLayerActions(bind);
+
     // View
     QAction* zoomIn = new QAction(tr("Zoom In"), this);
-    overrideShortcut(zoomIn, QKeySequence::ZoomIn);
+    bind(zoomIn, QStringLiteral("view.zoomIn"));
     Theme::setActionIcon(zoomIn, "zoom-in");
     connect(zoomIn, &QAction::triggered, m_canvas, &CanvasView::zoomIn);
 
     QAction* zoomOut = new QAction(tr("Zoom Out"), this);
-    overrideShortcut(zoomOut, QKeySequence::ZoomOut);
+    bind(zoomOut, QStringLiteral("view.zoomOut"));
     Theme::setActionIcon(zoomOut, "zoom-out");
     connect(zoomOut, &QAction::triggered, m_canvas, &CanvasView::zoomOut);
 
     QAction* zoomActual = new QAction(tr("Actual Size"), this);
-    overrideShortcut(zoomActual, QKeySequence("Ctrl+0"));
+    bind(zoomActual, QStringLiteral("view.actualSize"));
     Theme::setActionIcon(zoomActual, "zoom-actual");
     connect(zoomActual, &QAction::triggered, m_canvas, &CanvasView::zoomActual);
 
     QAction* zoomFit = new QAction(tr("Fit to Window"), this);
-    overrideShortcut(zoomFit, QKeySequence("Ctrl+9"));
+    bind(zoomFit, QStringLiteral("view.fit"));
     Theme::setActionIcon(zoomFit, "zoom-fit");
     connect(zoomFit, &QAction::triggered, m_canvas, &CanvasView::zoomFit);
 
@@ -622,6 +772,7 @@ void MainWindow::buildActions() {
     boundaryHandles->setCheckable(true);
     boundaryHandles->setChecked(Settings::showBoundaryHandles());
     m_boundaryHandlesAction = boundaryHandles;
+    bind(boundaryHandles, QStringLiteral("view.boundaryHandles"));
     Theme::setActionIcon(boundaryHandles, "canvas-handles");
     connect(boundaryHandles, &QAction::toggled, m_canvas,
             &CanvasView::setBoundaryHandlesEnabled);
@@ -690,8 +841,7 @@ void MainWindow::buildActions() {
         setThemePreference(Theme::Pref::Light);
     });
 
-    overrideShortcut(themeMenu->menuAction(),
-                     QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_T));
+    bind(themeMenu->menuAction(), QStringLiteral("view.theme"));
     Theme::setModeChangedCallback([this] { syncColorWell(); });
 }
 
@@ -757,23 +907,15 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         auto* flipH = new QToolButton(bar);
         flipH->setToolTip(tr("Flip horizontal"));
         Theme::setIcon(flipH, "flip-horizontal");
-        connect(flipH, &QToolButton::clicked, this, [this] {
-            if (m_canvas->hasSelection())
-                m_canvas->flipSelection(Qt::Horizontal);
-            else
-                m_canvas->flipCanvas(Qt::Horizontal);
-        });
+        connect(flipH, &QToolButton::clicked, this,
+                [this] { m_imageTransforms.value(QStringLiteral("image.flipH"))(); });
         c << flipH;
 
         auto* flipV = new QToolButton(bar);
         flipV->setToolTip(tr("Flip vertical"));
         Theme::setIcon(flipV, "flip-vertical");
-        connect(flipV, &QToolButton::clicked, this, [this] {
-            if (m_canvas->hasSelection())
-                m_canvas->flipSelection(Qt::Vertical);
-            else
-                m_canvas->flipCanvas(Qt::Vertical);
-        });
+        connect(flipV, &QToolButton::clicked, this,
+                [this] { m_imageTransforms.value(QStringLiteral("image.flipV"))(); });
         c << flipV;
 
         auto* magnifyBtn = toolButtonFor(ToolId::Magnify);
@@ -783,23 +925,15 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         auto* rotL = new QToolButton(bar);
         rotL->setToolTip(tr("Rotate left"));
         Theme::setIcon(rotL, "rotate-left");
-        connect(rotL, &QToolButton::clicked, this, [this] {
-            if (m_canvas->hasSelection())
-                m_canvas->rotateSelection(-90);
-            else
-                m_canvas->rotateCanvas(-90);
-        });
+        connect(rotL, &QToolButton::clicked, this,
+                [this] { m_imageTransforms.value(QStringLiteral("image.rotateLeft"))(); });
         c << rotL;
 
         auto* rotR = new QToolButton(bar);
         rotR->setToolTip(tr("Rotate right"));
         Theme::setIcon(rotR, "rotate-right");
-        connect(rotR, &QToolButton::clicked, this, [this] {
-            if (m_canvas->hasSelection())
-                m_canvas->rotateSelection(90);
-            else
-                m_canvas->rotateCanvas(90);
-        });
+        connect(rotR, &QToolButton::clicked, this,
+                [this] { m_imageTransforms.value(QStringLiteral("image.rotateRight"))(); });
         c << rotR;
 
         // The resize button belongs to the Image cluster rather than a cluster
@@ -930,6 +1064,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         }
         styleGrp->actions().first()->setChecked(true);
         m_shapeStyleButton->setMenu(styleMenu);
+        m_shapeStyleMenu = styleMenu;
 
         bar->addWidget(toolCluster(tr("Shapes"),
                                    {m_shapeButton, m_shapeStyleButton}));
@@ -1009,6 +1144,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         Theme::setIcon(layersToggle, "layer-stack", iconPx);
         layersToggle->setIconSize(QSize(iconPx, iconPx));
         layersToggle->setChecked(true);
+        m_layersToggle = layersToggle;
 
         connect(layersToggle, &QToolButton::toggled, this, [this](bool on) {
             m_layersDock->setVisible(on);
@@ -1360,6 +1496,18 @@ void MainWindow::setThemePreference(Theme::Pref pref) {
     Settings::apply(v);
 }
 
+void MainWindow::applyShortcuts() {
+    if (!m_shortcutActions)
+        return;
+    for (auto it = m_shortcutActions->constBegin(); it != m_shortcutActions->constEnd();
+         ++it) {
+        const Shortcuts::Entry* e = Shortcuts::find(it.key());
+        if (!e)
+            continue;
+        it.value()->setShortcut(Shortcuts::effective(*e));
+    }
+}
+
 void MainWindow::applySettings() {
     m_canvas->setBoundaryHandlesEnabled(Settings::showBoundaryHandles());
     m_undo->setUndoLimit(Settings::undoLimit());
@@ -1673,6 +1821,59 @@ void MainWindow::addLayer() {
         m_stack->setActiveIndex(0);
     });
     m_layersPanel->setActiveLayer(0);
+}
+
+// The layer keys are QActions rather than key handling on the rail, so they
+// resolve as WindowShortcuts -- which is what makes Alt+Up beat the canvas's own
+// arrow-key nudging instead of both firing.
+void MainWindow::buildLayerActions(
+    const std::function<QAction*(QAction*, const QString&)>& bind) {
+    auto add = [this, &bind](const QString& label, const char* id,
+                             const std::function<void()>& fn) {
+        auto* a = new QAction(label, this);
+        connect(a, &QAction::triggered, this, fn);
+        bind(a, QString::fromLatin1(id));
+    };
+    add(tr("Add a layer"), "layer.add", [this] { addLayer(); });
+    add(tr("Duplicate the layer"), "layer.duplicate", [this] {
+        const int at = m_stack->activeIndex();
+        if (at < 0 || at >= m_stack->count()) return;
+        runLayerCommand(tr("Duplicate layer"), [this, at] {
+            Layer copy = m_stack->layerAt(at);
+            copy.name = m_stack->nextName(copy.name);
+            m_stack->addLayer(at, copy);
+            m_stack->setActiveIndex(at);
+        });
+        m_layersPanel->setActiveLayer(at);
+    });
+    // "Above" and "below" mean the same thing in the rail (index 0 is topmost)
+    // and the opposite on the canvas (y grows downwards), so the two steps are
+    // spelled out rather than derived from a delta that would be wrong once.
+    auto focus = [this](int delta) {
+        const int at = m_stack->activeIndex();
+        const int next = at + delta;
+        if (at < 0 || next < 0 || next >= m_stack->count())
+            return;
+        m_stack->setActiveIndex(next);
+        m_layersPanel->setActiveLayer(next);
+    };
+    add(tr("Focus the layer above"), "layer.above", [this, focus] { focus(-1); });
+    add(tr("Focus the layer below"), "layer.below", [this, focus] { focus(1); });
+    auto move = [this](int delta) {
+        const int at = m_stack->activeIndex();
+        const int next = at + delta;
+        if (at < 0 || next < 0 || next >= m_stack->count())
+            return;
+        runLayerCommand(tr("Move layer"), [this, at, next] { m_stack->moveLayer(at, next); });
+        m_layersPanel->setActiveLayer(next);
+    };
+    add(tr("Move the layer up"), "layer.moveUp", [this, move] { move(-1); });
+    add(tr("Move the layer down"), "layer.moveDown", [this, move] { move(1); });
+    add(tr("Show or hide the layers panel"), "layers.panel", [this] {
+        // Routed through the toolbar button so the key and the click cannot
+        // leave the button showing the wrong state.
+        m_layersToggle->click();
+    });
 }
 
 void MainWindow::removeLayer(int index) {

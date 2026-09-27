@@ -30,6 +30,9 @@ qt_add_executable(wpaint
     src/Settings.cpp
     src/SettingsDialog.cpp
     src/SettingsRow.cpp
+    src/ShortcutEdit.cpp
+    src/Shortcuts.cpp
+    src/SettingsPage.cpp
     src/SettingsSwatchButton.cpp
     src/MainWindow.cpp
 )

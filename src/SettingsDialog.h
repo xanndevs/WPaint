@@ -7,6 +7,7 @@
 
 class FluentSwitch;
 class QComboBox;
+class SettingsPage;
 class QSpinBox;
 class QLabel;
 class QVBoxLayout;
@@ -27,6 +28,7 @@ public:
 
 private:
     void buildBehaviorPage();
+    void buildShortcutsPage();
     void buildDefaultsPage();
     void buildAboutPage();
     // A row of two titled labels with one control on the right.
@@ -43,6 +45,7 @@ private:
     QVBoxLayout* m_behaviorBody = nullptr;
     QVBoxLayout* m_defaultsBody = nullptr;
 
+    SettingsPage* m_shortcuts = nullptr;
     FluentSwitch* m_antialias = nullptr;
     FluentSwitch* m_crispMagnified = nullptr;
     FluentSwitch* m_boundaryHandles = nullptr;

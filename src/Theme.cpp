@@ -504,6 +504,13 @@ QDialog { background: %4; }
 #SettingsRowTitle { color: %3; }
 #SettingsRowDesc { color: %11; font-size: %12px; }
 #SettingsKeyValue { color: %11; }
+#SettingsFilter { max-width: 280px; }
+#ShortcutKey { font-family: "%1"; text-align: center; padding: 5px 8px; }
+#ShortcutKey:focus { border-color: %14; }
+#ShortcutReset { border: none; background: transparent; color: %11; padding: 4px 8px; }
+#ShortcutReset:hover { color: %3; text-decoration: underline; }
+#ShortcutWarning { color: %15; font-size: %12px; }
+#SettingsSwatch { border-radius: %6; }
 #SettingsAboutBlurb { color: %11; }
 )QSS")
         .arg(t.fontFamily)      // %1

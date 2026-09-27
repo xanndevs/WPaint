@@ -21,6 +21,8 @@ class QEnterEvent;
 class QContextMenuEvent;
 class QEvent;
 class QLabel;
+class QMenu;
+class QToolButton;
 class QMouseEvent;
 class QPaintEvent;
 class QResizeEvent;
@@ -107,6 +109,10 @@ private:
     // startup and again whenever the table reports a change, so a preference
     // never has two sources of truth.
     void applySettings();
+    // Re-read every binding from the table; called when the Shortcuts page
+    // changes one, so a rebind takes effect without a restart.
+    void applyShortcuts();
+    void buildLayerActions(const std::function<QAction*(QAction*, const QString&)>& bind);
     void setThemePreference(Theme::Pref pref);
     QSize documentSizeFromDefaults() const;
     void buildStatusBar();
@@ -167,6 +173,13 @@ private:
     CanvasView* m_canvas;
     QScrollArea* m_scrollArea;
     QAction* m_boundaryHandlesAction = nullptr;
+    QHash<QString, QAction*>* m_shortcutActions = nullptr;
+    // The image transforms live here as well as in actions, because the toolbar
+    // buttons and the keyboard must call the same code: two copies of a rotate
+    // is how a shortcut ends up doing something subtly different from its button.
+    QHash<QString, std::function<void()>> m_imageTransforms;
+    QMenu* m_shapeStyleMenu = nullptr;
+    QToolButton* m_layersToggle = nullptr;
     SizeSliderPanel* m_sizePanel;
     LayersPanel* m_layersPanel;
     CopilotPanel* m_copilotPanel;

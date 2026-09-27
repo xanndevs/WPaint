@@ -49,6 +49,15 @@ void SettingsRow::setControl(QWidget* control) {
     m_controlRow->addWidget(control, 0, Qt::AlignVCenter);
 }
 
+void SettingsRow::addControl(QWidget* control) {
+    if (!control) return;
+    m_controlRow->addWidget(control, 0, Qt::AlignVCenter);
+}
+
 void SettingsRow::addContent(QWidget* content) {
     if (content) m_root->addWidget(content);
+}
+
+void SettingsRow::addContentLayout(QLayout* layout) {
+    if (layout) m_root->addLayout(layout);
 }

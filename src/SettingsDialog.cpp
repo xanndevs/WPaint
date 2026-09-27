@@ -2,6 +2,7 @@
 #include "FluentCombo.h"
 #include "FluentSwitch.h"
 #include "Settings.h"
+#include "SettingsPage.h"
 #include "SettingsRow.h"
 #include "SettingsSwatchButton.h"
 #include "Theme.h"
@@ -138,6 +139,7 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
 
     buildBehaviorPage();
     buildDefaultsPage();
+    buildShortcutsPage();
     buildAboutPage();
 
     connect(m_nav, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
@@ -395,6 +397,12 @@ void SettingsDialog::buildDefaultsPage() {
     m_nav->addItem(tr("Defaults"));
 }
 
+void SettingsDialog::buildShortcutsPage() {
+    m_shortcuts = new SettingsPage;
+    m_pages->addWidget(m_shortcuts);
+    m_nav->addItem(tr("Shortcuts"));
+}
+
 void SettingsDialog::buildAboutPage() {
     QVBoxLayout* body = nullptr;
     QWidget* w = makePage(tr("About"), QString(), &body);
@@ -422,6 +430,7 @@ void SettingsDialog::buildAboutPage() {
 
 void SettingsDialog::reload() {
     m_antialias->setChecked(Settings::antialiasCanvas());
+    m_shortcuts->reload();
     m_crispMagnified->setChecked(Settings::crispPixelsWhenMagnified());
     m_boundaryHandles->setChecked(Settings::showBoundaryHandles());
     m_spaceWheel->setChecked(Settings::spaceWheelBrushSize());

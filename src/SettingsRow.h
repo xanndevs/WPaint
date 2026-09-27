@@ -3,6 +3,7 @@
 #include <QWidget>
 
 class QHBoxLayout;
+class QLayout;
 class QVBoxLayout;
 
 // One preference, as a sentence and a control.
@@ -21,10 +22,15 @@ public:
 
     // Right-hand control, at its natural size. Ownership moves here.
     void setControl(QWidget* control);
+    // A second right-hand control, for a row that needs more than one.
+    void addControl(QWidget* control);
 
     // Full-width block under the description, for a control that needs the
     // whole row -- a palette grid, a shortcut table. Ownership moves here.
     void addContent(QWidget* content);
+    // The same, for a row of several controls that is a layout rather than a
+    // single widget.
+    void addContentLayout(QLayout* layout);
 
     QHBoxLayout* controlLayout() { return m_controlRow; }
     QVBoxLayout* textLayout() { return m_text; }
