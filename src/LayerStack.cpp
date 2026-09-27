@@ -341,6 +341,14 @@ int LayerStack::layerCount() const {
     return n;
 }
 
+// What a document keeps alive. A group counts only while it still holds
+// something, because an empty group is a container rather than content -- and
+// counting it would let the last real layer be deleted, leaving a document with
+// nothing to draw on and a group that cannot itself be deleted.
+static bool holdsContent(const Layer& l) {
+    return l.isDrawable() || (l.isFolder && l.childCount > 0);
+}
+
 bool LayerStack::canRemove(int i) const {
     if (i < 0 || i >= m_layers.size() || m_layers.at(i).isBackground)
         return false;
@@ -350,8 +358,14 @@ bool LayerStack::canRemove(int i) const {
     for (int k = 0; k < m_layers.size(); ++k) {
         if (span.contains(k) || m_layers.at(k).isBackground)
             continue;
-        ++survivors;
+        if (holdsContent(m_layers.at(k)))
+            ++survivors;
     }
+    // An empty group holds nothing, so removing one cannot leave the document
+    // without a layer -- it must always be removable, or a group created by the
+    // button is a thing the user cannot get rid of again.
+    if (survivors == 0 && span.size() == 1 && isFolder(span.first()))
+        return true;
     return survivors > 0;
 }
 
@@ -366,8 +380,15 @@ bool LayerStack::canRemoveAny(const QList<int>& selection) const {
     for (int k = 0; k < m_layers.size(); ++k) {
         if (doomed.contains(k) || m_layers.at(k).isBackground)
             continue;
-        ++survivors;
+        if (holdsContent(m_layers.at(k)))
+            ++survivors;
     }
+    // The same exception as canRemove(): an empty group in the selection is
+    // content-free, so it does not count as what is being kept.
+    if (survivors == 0)
+        for (int k : doomed)
+            if (isFolder(k) && spanOf(k).size() == 1)
+                return true;
     return survivors > 0;
 }
 
@@ -467,6 +488,11 @@ int LayerStack::mergeRun(const QList<int>& run) {
 // Keeps every folder's childCount agreeing with the entries that actually
 // follow it, and truncates a count that runs off the end of the list. Called
 // after anything that can take entries out from under a folder.
+//
+// A folder with no children left stays a folder. It used to be demoted to a
+// plain layer here, which quietly threw away a group the user had emptied on
+// purpose -- and it made the button that creates one unusable, since the count
+// is zero the moment it is born.
 void LayerStack::fixChildCounts() {
     for (int i = 0; i < m_layers.size(); ++i) {
         if (!m_layers.at(i).isFolder)
@@ -475,10 +501,6 @@ void LayerStack::fixChildCounts() {
         if (m_layers.at(i).childCount > available)
             m_layers[i].childCount = qMax(0, available);
     }
-    // A folder with no children left is not a folder.
-    for (int i = m_layers.size() - 1; i >= 0; --i)
-        if (m_layers.at(i).isFolder && m_layers.at(i).childCount <= 0)
-            m_layers[i].isFolder = false;
 }
 
 int LayerStack::groupInto(const QList<int>& selection, bool folded) {
@@ -534,8 +556,25 @@ int LayerStack::groupInto(const QList<int>& selection, bool folded) {
     return at;
 }
 
-bool LayerStack::ungroup(int folderIndex) {
-    if (!isFolder(folderIndex))
+int LayerStack::addFolder(bool folded) {
+    // A group holds what is put in it, and what goes in it goes on top, so an
+    // empty one belongs at the top of the stack rather than at the selection --
+    // which is also where "add layer" puts the layers that will fill it.
+    Layer folder;
+    folder.name = nextName(tr("Group"));
+    folder.isFolder = true;
+    folder.childCount = 0;
+    folder.folded = folded;
+    folder.visible = true;
+    const int at = qMin(0, m_layers.size());
+    m_layers.insert(at, folder);
+    m_active = at;
+    emit changed();
+    emit activeChanged(m_active);
+    return at;
+}
+
+bool LayerStack::ungroup(int folderIndex) {    if (!isFolder(folderIndex))
         return false;
     const int n = childCountOf(folderIndex);
     m_layers.removeAt(folderIndex);

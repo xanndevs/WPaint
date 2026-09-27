@@ -2131,8 +2131,22 @@ void MainWindow::renameLayers(int index, const QString& name,
 }
 
 void MainWindow::groupLayers(const QList<int>& selection) {
-    if (selection.size() < 2)
+    if (selection.size() < 2) {
+        // Nothing to wrap, so make the group and let the layers arrive later --
+        // a folder button that only groups what is already selected is a button
+        // that does nothing for most of a document's life.
+        const QList<Layer> before = m_stack->layers();
+        const int beforeActive = m_stack->activeIndex();
+        m_canvas->bakeActiveObject();
+        const int at = m_stack->addFolder(Settings::newFoldersFolded());
+        if (at < 0)
+            return;
+        m_undo->push(
+            Commands::makeLayerList(m_stack, before, beforeActive, tr("Add group")));
+        m_layersPanel->setSelection({at});
+        m_layersPanel->setActiveLayer(at);
         return;
+    }
     // A folder owns a contiguous run, so a selection with a hole in it is
     // refused rather than quietly widened -- widening would swallow layers the
     // user did not pick, and losing one to a group is not undoable by renaming.

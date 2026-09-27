@@ -439,6 +439,9 @@ void LayersPanel::rebuildList() {
             auto* fold = new QToolButton(thumbHolder);
             fold->setObjectName("LayerEyeBtn");
             fold->setAutoRaise(true);
+            // Folding is a state, not a consequence of what is inside: an empty
+            // group folds and unfolds like any other, it just has nothing to
+            // reveal, and the state is the user's to have either way.
             fold->setToolTip(layer.folded ? tr("Expand this group")
                                           : tr("Collapse this group"));
             fold->setIcon(foldChevron(layer.folded, glyphTint));
@@ -514,7 +517,11 @@ void LayersPanel::updateHeaderState() {
     // a stale selection; either way the background is never a delete target.
     const bool removable =
         !sel.isEmpty() && !sel.contains(bg) && m_stack->canRemoveAny(sel);
+    // A block of neighbours is what gets grouped; anything else -- nothing
+    // picked, or one layer -- means the button makes an empty group instead, so
+    // it stays live unless there is a selection it would have to refuse.
     const bool groupable = sel.size() > 1 && m_stack->resolveSelection(sel).size() == 1;
+    const bool makesGroup = groupable || sel.size() < 2;
 
     m_remove->setEnabled(removable);
     m_remove->setToolTip(removable ? tr("Delete the selected layers")
@@ -524,9 +531,11 @@ void LayersPanel::updateHeaderState() {
     Theme::setIcon(m_remove, removable ? QStringLiteral("layer-delete")
                                        : QStringLiteral("layer-delete-disabled"),
                    Theme::tokens().toolbarBtnSmall);
-    m_folder->setEnabled(groupable);
+    m_folder->setEnabled(makesGroup);
     m_folder->setToolTip(groupable ? tr("Group the selected layers into a folder")
-                                   : tr("Select the layers to group, in one block"));
+                                   : makesGroup
+                                         ? tr("Add an empty group")
+                                         : tr("Select the layers to group, in one block"));
 }
 
 void LayersPanel::applyActiveProperty(int activeRow) {

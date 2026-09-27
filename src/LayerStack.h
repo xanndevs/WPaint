@@ -74,6 +74,11 @@ public:
     // when the selection is not a single run. `folded` is the new folder's
     // initial state; the preference that decides it lives in Settings.
     int groupInto(const QList<int>& selection, bool folded);
+    // An empty group, for when there is nothing to group yet. It lands at the
+    // top like a new layer, because that is where the layers about to go into
+    // it belong. Returns its index, or -1 on a document with no background to
+    // sit above.
+    int addFolder(bool folded);
     bool ungroup(int folderIndex);
     // Removes a selection -- folders, their children and nested groups -- as one
     // structural step, fixing up the counts of the folders that survive it.
