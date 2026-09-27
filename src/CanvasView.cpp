@@ -97,7 +97,18 @@ void CanvasView::setColors(const QColor& p, const QColor& s) {
 }
 
 void CanvasView::setBrushSize(int s) {
-    m_brushSize = qBound(1, s, kMaxBrushSize);
+    const int nv = qBound(1, s, kMaxBrushSize);
+    if (nv == m_brushSize) return;
+    m_brushSize = nv;
+    // A shape already on the canvas keeps the width it was drawn with until the
+    // user picks a new one, which makes the live object disagree with the
+    // preview of the shape being drawn right now. Retint it, so the outline
+    // under the cursor follows the size strip.
+    if (m_hasObject) {
+        m_object.penWidth = nv;
+        m_objectOrig.penWidth = nv;
+    }
+    emit brushSizeChanged(nv);
     update();
 }
 
@@ -503,6 +514,26 @@ void CanvasView::resizeEvent(QResizeEvent* ev) {
 }
 
 void CanvasView::wheelEvent(QWheelEvent* ev) {
+    // Space + wheel is the brush size, and takes priority over both the zoom
+    // and the scroll: Space is already the "don't edit, navigate" modifier
+    // here, and a size change is the one thing it can usefully add.
+    if (m_spaceDown && m_tool && m_tool->supportsBrushSize() &&
+        !(ev->modifiers() & Qt::ControlModifier)) {
+        int steps = 0;
+        const int angle = ev->angleDelta().y();
+        if (angle != 0) {
+            steps = qRound(qreal(angle) / 120.0); // one notch per step
+        } else {
+            // A trackpad has no notches; ~30px of travel is one step.
+            const int px = ev->pixelDelta().y();
+            steps = qBound(-4, px / 30, 4);
+        }
+        if (steps != 0) {
+            setBrushSize(m_brushSize + steps);
+            ev->accept();
+            return;
+        }
+    }
     if (ev->modifiers() & Qt::ControlModifier) {
         // A mouse wheel reports angleDelta; a trackpad pinch reports pixelDelta
         // with angleDelta zero, and used to be dropped entirely.

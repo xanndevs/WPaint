@@ -464,6 +464,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
 
     connect(m_sizePanel, &SizeSliderPanel::sizeChanged, m_canvas,
             &CanvasView::setBrushSize);
+    // Space+wheel changes the size from the canvas side; the strip is a view of
+    // the canvas value, not the other way round, so it has to follow.
+    connect(m_canvas, &CanvasView::brushSizeChanged, m_sizePanel,
+            &SizeSliderPanel::setSize);
 
     connect(m_layersPanel, &LayersPanel::activeRequested, this,
             [this](int index) { m_canvas->setActiveLayer(index); });

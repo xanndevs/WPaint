@@ -177,6 +177,9 @@ signals:
     // through LayerStack::changed; the layers rail needs to hear about drawing
     // too, or its thumbnails only refresh on resize/rotate/flip.
     void pixelsChanged();
+    // The size strip is a view of this value, so anything that changes the
+    // brush size from here (Space+wheel) has to push it back to the panel.
+    void brushSizeChanged(int size);
     // Right-click inside a selection. MainWindow owns the clipboard and the
     // transform entry points, so the menu is assembled there.
     void selectionContextRequested();
