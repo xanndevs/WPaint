@@ -162,6 +162,11 @@ private:
     QColor outlineColor(CanvasView* c) const;
     QColor fillColor(CanvasView* c) const;
     QPainterPath curvePath() const;
+    // The two corners of the shape box for this cursor position, given the
+    // press anchor and the held modifiers. Shift squares the box, Alt grows it
+    // to every side of the anchor.
+    void dragBox(const QPointF& raw, Qt::KeyboardModifiers mods, QPointF& c0,
+                 QPointF& c1) const;
     void resetGesture();
     void commitGesture(CanvasView* c);
 
@@ -172,6 +177,7 @@ private:
     bool m_bending = false;
     int m_bendArm = 0; // curve bend phase 0=none, 1=arm1, 2=arm2
     Qt::MouseButton m_button = Qt::NoButton; // button that started the gesture
+    QPointF m_anchor; // press point; stays put while Alt moves both corners
     QPointF m_a, m_b;  // shape corners / curve endpoints
     QPointF m_c1, m_c2;
 };

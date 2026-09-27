@@ -26,13 +26,34 @@
 
 namespace ShapeKit {
 
+// An n-gon mapped onto the drag rect exactly. Inscribing it in a circle of the
+// shorter side (what this used to do) left it floating in the middle of a wide
+// box and never touching the edges, so a pentagon ignored the area it was being
+// drawn in while every other shape obeyed it. The vertices are laid out on a
+// unit circle, then x and y are scaled independently so the polygon's own
+// bounding box lands on the rect: the shape stretches with the drag instead of
+// keeping a fixed aspect.
 static QPolygonF regularPolygon(const QRectF& r, int sides, qreal rotationDeg) {
-    QPolygonF pts;
-    const QPointF c = r.center();
-    const qreal rad = qMin(r.width(), r.height()) / 2.0;
+    QPolygonF unit;
     for (int i = 0; i < sides; ++i) {
         const qreal ang = qDegreesToRadians(rotationDeg + qreal(i) * 360.0 / sides - 90.0);
-        pts << QPointF(c.x() + rad * std::cos(ang), c.y() + rad * std::sin(ang));
+        unit << QPointF(std::cos(ang), std::sin(ang));
+    }
+    qreal minX = unit.first().x(), maxX = minX;
+    qreal minY = unit.first().y(), maxY = minY;
+    for (const QPointF& p : unit) {
+        minX = qMin(minX, p.x());
+        maxX = qMax(maxX, p.x());
+        minY = qMin(minY, p.y());
+        maxY = qMax(maxY, p.y());
+    }
+    const qreal sx = maxX - minX;
+    const qreal sy = maxY - minY;
+    QPolygonF pts;
+    for (const QPointF& p : unit) {
+        const qreal fx = sx > 0.0 ? (p.x() - minX) / sx : 0.5;
+        const qreal fy = sy > 0.0 ? (p.y() - minY) / sy : 0.5;
+        pts << QPointF(r.left() + fx * r.width(), r.top() + fy * r.height());
     }
     return pts;
 }
@@ -610,15 +631,41 @@ void ShapeTool::mousePress(CanvasView* c, QMouseEvent* ev) {
         m_active = true;
         m_bendArm = 0;
         m_c1 = m_c2 = QPointF();
-        m_a = m_b = p;
+        m_anchor = m_a = m_b = p;
     } else {
         if (m_active)
             commitGesture(c);
         m_button = ev->button();
         m_active = true;
-        m_a = m_b = p;
+        m_anchor = m_a = m_b = p;
     }
     c->requestRepaint();
+}
+
+// Shift squares the drag off its longer side -- for the endpoint shapes (line,
+// curve, pointing arrow) that is the same rule as snapping the angle to 45
+// degrees, since a square box can only span a diagonal. Alt puts the anchor in
+// the middle, so the shape grows to every side of the press point instead of
+// only right and down. Photoshop's convention, and the two compose: Alt+Shift
+// gives a square centred on the anchor.
+void ShapeTool::dragBox(const QPointF& raw, Qt::KeyboardModifiers mods, QPointF& c0,
+                        QPointF& c1) const {
+    const QPointF d = raw - m_anchor;
+    // Shift squares the drag off its longer side, on the drag vector rather than
+    // on the finished box -- with Alt that is the difference between a square
+    // hanging off the anchor and a square centred on it.
+    QPointF v = d;
+    if (mods.testFlag(Qt::ShiftModifier)) {
+        const qreal side = qMax(qAbs(d.x()), qAbs(d.y()));
+        v = QPointF(d.x() < 0.0 ? -side : side, d.y() < 0.0 ? -side : side);
+    }
+    if (mods.testFlag(Qt::AltModifier)) {
+        c0 = m_anchor - v;
+        c1 = m_anchor + v;
+    } else {
+        c0 = m_anchor;
+        c1 = m_anchor + v;
+    }
 }
 
 void ShapeTool::mouseMove(CanvasView* c, QMouseEvent* ev) {
@@ -629,7 +676,7 @@ void ShapeTool::mouseMove(CanvasView* c, QMouseEvent* ev) {
         else if (m_bendArm == 2)
             m_c2 = p;
     } else if (m_active) {
-        m_b = p;
+        dragBox(p, ev->modifiers(), m_a, m_b);
     } else if (m_bendArm != 0) {
         if (m_bendArm == 1) m_c1 = p;
         else m_c2 = p;
@@ -746,6 +793,7 @@ void ShapeTool::resetGesture() {
     m_bending = false;
     m_bendArm = 0;
     m_button = Qt::NoButton;
+    m_anchor = QPointF();
     m_c1 = m_c2 = QPointF();
 }
 
