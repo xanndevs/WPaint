@@ -106,8 +106,10 @@ QString shapeStyleModeIcon(ShapeStyle s) {
 }
 
 // Renders an SVG with its baked-in colors (gradients), bypassing the mask
-// tinting used for monochrome icons.
-QIcon renderedIcon(const QString& svgName, int px) {
+// tinting used for monochrome icons. Its only caller is the Copilot cluster,
+// which is commented out in the shell, so the build would otherwise be the one
+// warning in a -Wall -Wextra tree.
+[[maybe_unused]] QIcon renderedIcon(const QString& svgName, int px) {
     QFile f(QStringLiteral(":/assets/icons/%1.svg").arg(svgName));
     QIcon ic;
     if (f.open(QIODevice::ReadOnly)) {
