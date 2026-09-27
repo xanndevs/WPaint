@@ -50,6 +50,13 @@ public:
     void addLayer(int index, const Layer& layer);
     void removeLayer(int index);
     void moveLayer(int from, int to); // reorder around the active index
+    // Moves the run that starts at `from` -- one entry, or a whole folder with
+    // its contents -- so that it lands immediately before whatever entry was at
+    // `to`, which is the index the caller had *before* the move. `intoFolder`
+    // puts it at the top of that folder instead of between rows. Returns where it
+    // landed, or -1 when the move is not one that can be made.
+    int moveSpan(int from, int to, bool intoFolder = false);
+    bool canMoveSpan(int from, int to, bool intoFolder = false) const;
     void setLayerVisible(int i, bool visible);
     void setBackgroundColor(int i, const QColor& color);
     void renameLayer(int i, const QString& name);
@@ -135,6 +142,10 @@ signals:
 
 private:
     void clampActive();
+    // Where a dragged run comes to rest, as an index in the list with the run
+    // lifted out, or -1 when the move cannot be made. Shared by canMoveSpan()
+    // and moveSpan() so the two can never disagree about what is legal.
+    int spanDestination(int from, int to, bool intoFolder) const;
     // Draws entries first..last (inclusive) bottom-up into one image, topmost
     // last. A negative `first` means the whole list; withBackground paints the
     // backdrop colour under them, and onlyVisible is what the canvas shows

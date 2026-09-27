@@ -32,8 +32,9 @@ public:
     void setSelection(const QList<int>& indices);
 
     QList<int> selectedIndices() const;
-    // The row the user last touched, which is not necessarily the current one
-    // after a ctrl-click extends the selection.
+    // The layer the user last touched, which is not necessarily the active one
+    // after a ctrl-click extends the selection. A stack index, not a row: the
+    // callers that want it are working in stack indices.
     int lastSelectedIndex() const { return m_lastSelected; }
 
     // The caption strip holding the title, the layer count and the
@@ -73,6 +74,12 @@ private:
     void onCurrentRowChanged(int row);
     void applyActiveProperty(int activeRow);
     void updateHeaderState();
+    // The rail's rows and the stack's indices are two different things as soon
+    // as a group is folded, and every "which row/which layer" question has to
+    // cross between them explicitly. Mixing them up is how the shift anchor
+    // ended up pointing at the wrong row.
+    int rowOfIndex(int index) const;
+    int indexOfRow(int row) const;
     void startRename(int index);
     void commitRename();
     // Handles shift-click ourselves; see the implementation for why.
@@ -87,6 +94,9 @@ private:
     QToolButton* m_remove;
     QWidget* m_backgroundBar = nullptr;
     bool m_syncing = false;
+    // The stack index of the layer the user last touched, or -1. Always a stack
+    // index, never a row: a folded group makes the two differ, and the callers
+    // of this (the rename rule, the shift anchor) are both in stack indices.
     int m_lastSelected = -1;
     // The inline rename editor, when one is open.
     int m_renamingIndex = -1;

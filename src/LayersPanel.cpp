@@ -245,6 +245,21 @@ QList<int> LayersPanel::selectedIndices() const {
     return out;
 }
 
+int LayersPanel::rowOfIndex(int index) const {
+    for (int row = 0; row < m_list->count(); ++row)
+        if (m_list->item(row)->data(Qt::UserRole).toInt() == index)
+            return row;
+    return -1; // inside a folded group, or gone
+}
+
+int LayersPanel::indexOfRow(int row) const {
+    if (row < 0 || row >= m_list->count())
+        return -1;
+    bool ok = false;
+    const int index = m_list->item(row)->data(Qt::UserRole).toInt(&ok);
+    return ok ? index : -1;
+}
+
 void LayersPanel::setSelection(const QList<int>& indices) {
     m_list->blockSignals(true);
     m_list->clearSelection();
@@ -269,7 +284,7 @@ void LayersPanel::setSelection(const QList<int>& indices) {
         m_lastSelected = indices.last();
     }
     m_list->blockSignals(false);
-    applyActiveProperty(m_stack->activeIndex());
+    applyActiveProperty(rowOfIndex(m_stack->activeIndex()));
     updateHeaderState();
 }
 
@@ -298,12 +313,15 @@ void LayersPanel::setActiveLayer(int index) {
     // current row here would clear a multi-selection, and it happens *during*
     // the click that made it -- so a shift-click would extend from the wrong
     // anchor and quietly skip a row in the middle.
-    if (selectedIndices().size() <= 1 && index >= 0 && index < m_list->count() &&
-        m_list->currentRow() != index) {
-        m_list->setCurrentRow(index);
+    if (selectedIndices().size() <= 1 && index >= 0) {
+        // `index` is the active *layer*; the row it is on is a different number
+        // as soon as a group above it is folded.
+        const int row = rowOfIndex(index);
+        if (row >= 0 && m_list->currentRow() != row)
+            m_list->setCurrentRow(row);
         m_lastSelected = index;
     }
-    applyActiveProperty(index);
+    applyActiveProperty(rowOfIndex(index));
 }
 
 // Shift-click, done here rather than by the view.
@@ -327,7 +345,13 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     if (!index.isValid())
         return QWidget::eventFilter(watched, ev);
     const int row = index.row();
-    const int anchor = m_lastSelected >= 0 ? m_lastSelected : m_list->currentRow();
+    // The anchor is a layer, and the row it sits on is a question, not a given:
+    // a folded group puts the layer the user clicked four rows away from where
+    // they clicked. Comparing the layer index against the clicked row is what
+    // made shift-click *upwards* drop the anchor and select just the one row.
+    int anchor = rowOfIndex(m_lastSelected);
+    if (anchor < 0)
+        anchor = m_list->currentRow();
     if (anchor < 0)
         return QWidget::eventFilter(watched, ev);
 
@@ -338,9 +362,13 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     for (int r = from; r <= to; ++r)
         if (QListWidgetItem* item = m_list->item(r))
             item->setSelected(true);
-    m_list->setCurrentRow(row);
+    // NoUpdate, like setSelection(): the default command is ClearAndSelect, so
+    // making the clicked row current threw away the range that had just been
+    // built and left one row selected -- which reads as shift-click dropping
+    // everything it had just picked.
+    m_list->setCurrentRow(row, QItemSelectionModel::NoUpdate);
     m_list->blockSignals(false);
-    m_lastSelected = row;
+    m_lastSelected = indexOfRow(row);
     applyActiveProperty(row);
     updateHeaderState();
     press->accept();
@@ -500,13 +528,20 @@ void LayersPanel::rebuildList() {
         setSelection(keep);
         if (keepCurrent >= 0 && keepCurrent < m_list->count())
             m_list->setCurrentRow(keepCurrent);
-    } else if (active >= 0 && active < m_list->count()) {
-        m_list->setCurrentRow(active);
+    } else if (active >= 0) {
+        // The active *layer*, which is not the row it is on when a group above
+        // it is folded.
+        const int row = rowOfIndex(active);
+        if (row >= 0)
+            m_list->setCurrentRow(row);
         m_lastSelected = active;
     }
     m_list->blockSignals(false);
     m_syncing = false;
-    applyActiveProperty(m_list->currentRow());
+    // The accent follows the canvas's active layer, never the current row: with
+    // a multi-selection, or with a group folded above it, those are two
+    // different rows and only one of them is the active layer.
+    applyActiveProperty(rowOfIndex(m_stack->activeIndex()));
     updateHeaderState();
 }
 
@@ -571,7 +606,7 @@ void LayersPanel::applyActiveProperty(int activeRow) {
 
 void LayersPanel::onCurrentRowChanged(int row) {
     if (m_syncing || row < 0) return;
-    m_lastSelected = row;
+    m_lastSelected = indexOfRow(row);
     applyActiveProperty(row);
     updateHeaderState();
     emit activeRequested(row);

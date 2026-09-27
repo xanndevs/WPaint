@@ -180,6 +180,84 @@ void LayerStack::moveLayer(int from, int to) {
     emit activeChanged(m_active);
 }
 
+// A drag carries a run, not an entry: moving a folder means moving everything it
+// holds, or the counts stop describing the list.
+//
+// `to` is an index in the list as the caller sees it, before anything moves, and
+// the run comes to rest immediately before that entry -- the convention
+// moveLayer() has always used, and the one a drop between two rows already
+// speaks. intoFolder means the top of the folder at `to` instead: its first
+// child slot, which for a folded group is the only place a drop can mean
+// anything, since none of its children are on screen to aim at.
+int LayerStack::spanDestination(int from, int to, bool intoFolder) const {
+    if (from < 0 || from >= m_layers.size())
+        return -1;
+    if (m_layers.at(from).isBackground)
+        return -1; // the background holds the canvas and stays at the bottom
+    const int n = isFolder(from) ? childCountOf(from) + 1 : 1;
+    if (from + n > m_layers.size())
+        return -1;
+
+    int after = 0; // the answer, as an index into the list with the run lifted
+    if (intoFolder) {
+        if (to < 0 || to >= m_layers.size() || !isFolder(to))
+            return -1;
+        // A group cannot go inside itself, nor inside anything it already holds.
+        if (to == from || (to > from && to < from + n))
+            return -1;
+        // The entry below the header is its first child; after lifting the run it
+        // sits one further down when the run came from above the header.
+        after = to + 1 + (to > from ? n : 0);
+    } else {
+        // Landing inside the run being moved is not a move at all.
+        if (to < 0 || to >= m_layers.size() + 1)
+            return -1;
+        if (to > from && to < from + n)
+            return -1;
+        after = to > from ? to - n : to;
+    }
+
+    const int size = m_layers.size() - n;
+    after = qBound(0, after, size);
+    // Nothing may come to rest below the background.
+    const int bg = backgroundIndex();
+    if (bg >= 0) {
+        const int bgAfter = bg - (from < bg ? n : 0);
+        if (after > bgAfter)
+            return -1;
+    }
+    return after;
+}
+
+bool LayerStack::canMoveSpan(int from, int to, bool intoFolder) const {
+    return spanDestination(from, to, intoFolder) >= 0;
+}
+
+int LayerStack::moveSpan(int from, int to, bool intoFolder) {
+    const int at = spanDestination(from, to, intoFolder);
+    if (at < 0)
+        return -1;
+    const int n = isFolder(from) ? childCountOf(from) + 1 : 1;
+    const QList<Layer> run = m_layers.mid(from, n);
+    m_layers.remove(from, n);
+    // QList has no run-insert, and inserting one at a time from `at` upwards
+    // keeps the run's own order.
+    for (int k = 0; k < n; ++k)
+        m_layers.insert(at + k, run.at(k));
+    // The entry that was active is still active, wherever it ended up.
+    if (m_active >= from && m_active < from + n)
+        m_active = at;
+    else if (m_active >= from + n)
+        m_active -= n;
+    else if (m_active >= at)
+        ++m_active;
+    fixChildCounts();
+    clampActive();
+    emit changed();
+    emit activeChanged(m_active);
+    return at;
+}
+
 void LayerStack::setLayerVisible(int i, bool visible) {
     if (i < 0 || i >= m_layers.size()) return;
     m_layers[i].visible = visible;
