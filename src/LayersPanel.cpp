@@ -71,6 +71,12 @@ QIcon foldChevron(bool folded, const QColor& tint) {
 // about the row, not about the stack.
 constexpr int kFolderRole = Qt::UserRole + 1;
 
+// Row heights. A layer needs room for a 36px thumbnail; a group is a chevron
+// and a folder glyph, so it gets a third of that and the rail stops looking like
+// a list of thumbnails with the headings in between.
+constexpr int kLayerRowHeight = 36;
+constexpr int kFolderRowHeight = 20;
+
 const char kDragFormat[] = "application/x-wpaint-layers";
 
 // The rail's list, with a drag of its own.
@@ -238,7 +244,10 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
         window()->setAcceptDrops(true);
     m_list->setDefaultDropAction(Qt::MoveAction);
     m_list->setDragDropOverwriteMode(false);
-    m_list->setUniformItemSizes(true);
+    // Not uniform: a group row is a third the height of a layer row, and
+    // uniformItemSizes caches one size for the whole list from the first item --
+    // so with a group at the top, every row in the rail would be that height.
+    m_list->setUniformItemSizes(false);
     m_list->setFocusPolicy(Qt::StrongFocus);
 
     const auto* t = &Theme::tokens();
@@ -616,12 +625,18 @@ void LayersPanel::rebuildList() {
         QWidget* row = new QWidget(this);
         row->setObjectName("LayerRow");
         row->setProperty("layerIndex", i);
+        // A group is a label, not a picture, so it gets a row to itself and the
+        // 36px a layer needs for its thumbnail. Two pixels of margin on top of
+        // that, which is where the "2 to 4px" of padding actually lives: the
+        // height of a row is its tallest child plus its margins, and the tallest
+        // child of a layer row is the thumbnail holder.
+        const int rowHeight = isFolder ? kFolderRowHeight : kLayerRowHeight;
         auto* rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(4, 2, 4, 2);
         rowLayout->setSpacing(6);
         // Depth is indentation: a child of a group reads as belonging to it
         // without a tree, a guide line or another widget.
-        rowLayout->setContentsMargins(4 + m_stack->depthOf(i) * 14, 2, 4, 2);
+        rowLayout->setContentsMargins(4 + m_stack->depthOf(i) * 14, isFolder ? 1 : 2, 4,
+                                      isFolder ? 1 : 2);
 
         const bool isActive = i == m_stack->activeIndex();
         const auto& tk = Theme::tokens();
@@ -648,7 +663,7 @@ void LayersPanel::rebuildList() {
         });
 
         auto* thumbHolder = new QWidget(row);
-        thumbHolder->setFixedSize(66, 36);
+        thumbHolder->setFixedSize(66, rowHeight);
         auto* thumbLayout = new QHBoxLayout(thumbHolder);
         thumbLayout->setContentsMargins(0, 0, 0, 0);
         thumbLayout->setSpacing(0);
@@ -665,17 +680,17 @@ void LayersPanel::rebuildList() {
             fold->setToolTip(layer.folded ? tr("Expand this group")
                                           : tr("Collapse this group"));
             fold->setIcon(foldChevron(layer.folded, glyphTint));
-            fold->setIconSize(QSize(18, 18));
-            fold->setFixedSize(20, 36);
+            fold->setIconSize(QSize(16, 16));
+            fold->setFixedSize(20, rowHeight);
             const int folderIndex = i;
             connect(fold, &QToolButton::clicked, this, [this, folderIndex] {
                 emit foldedRequested(folderIndex, !m_stack->layerAt(folderIndex).folded);
             });
             auto* glyph = new QLabel(thumbHolder);
             glyph->setObjectName("LayerFolderGlyph");
-            glyph->setFixedSize(24, 36);
-            glyph->setPixmap(Theme::icon("layer-folder", 20, glyphTint)
-                                 .pixmap(20, 20));
+            glyph->setFixedSize(22, rowHeight);
+            glyph->setPixmap(Theme::icon("layer-folder", 18, glyphTint)
+                                 .pixmap(18, 18));
             thumbLayout->addWidget(fold);
             thumbLayout->addWidget(glyph, 1);
         } else {
@@ -696,8 +711,12 @@ void LayersPanel::rebuildList() {
         rowLayout->addWidget(thumbHolder);
         rowLayout->addWidget(name, 1);
 
-        item->setSizeHint(row->sizeHint());
+        // Measured after the widgets are in the layout and the row is the item's
+        // widget, so the label's stylesheet font is resolved. The hint is taken
+        // once: uniformItemSizes is off, and each row is allowed to be its own
+        // height, which is the whole point of the group row.
         m_list->setItemWidget(item, row);
+        item->setSizeHint(row->sizeHint());
         // Built, then made to look like itself: the builder tints every glyph
         // with the accent for an active row, and this is what takes that back off
         // a row that is not (or is no longer) the active one.
