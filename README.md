@@ -18,6 +18,9 @@ an HSV/RGB color editor — all in Qt 6 / C++.
 - Image and transform undo via per-paint patches
 - Export to PNG / JPEG / BMP / GIF; save/load layered `.wpa` projects
 - Light and dark themes (Ctrl+Shift+T), native High-DPI icon rendering
+- Middle-click drag pans the canvas; Ctrl+wheel zooms at the cursor
+- Preferences dialog (Ctrl+,) with a canvas rendering switch: smooth edges or
+  crisp nearest-neighbour pixels when zoomed in
 
 ## Requirements
 
@@ -59,8 +62,11 @@ Optional debug flags used by the smoke-test script:
 | Select All / Delete | Ctrl+A / Del |
 | Resize & Rotate | Ctrl+E |
 | Zoom In / Out / 100% / Fit | Ctrl++ / Ctrl+- / Ctrl+0 / Ctrl+9 |
+| Preferences | Ctrl+, |
 
 ## Notes
 
 - Transparency flattens on export; the eyedropper samples over white.
+- Preferences are stored via `QSettings` (`~/.config/WPaint/WPaint.conf`); the
+  canvas rendering switch only affects the screen, never saved files.
 - The Copilot rail is a visual placeholder for a future model integration.
