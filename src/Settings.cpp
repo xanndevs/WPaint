@@ -1,5 +1,6 @@
 #include "Settings.h"
 
+#include "PalettePresets.h"
 #include <QSettings>
 
 namespace {
@@ -81,6 +82,37 @@ static ShortcutMap decodeShortcuts(const QString& text) {
     return m;
 }
 
+// The custom palette, as one #AARRGGBB per line.
+//
+// It used to be written as a plain QVector<QColor>, which QSettings stores as a
+// QVariantList and therefore as a binary @Variant(...) blob of the QDataStream
+// bytes. It came back as an *empty* list -- a QVariantList does not convert to a
+// QVector<QColor> the way a QVariantMap decodes to a QMap, so the "always twenty
+// entries" repair below quietly replaced the palette with twenty whites. Which is
+// why the preset index came back as Custom and the swatches did not: the int
+// round-tripped, the colours did not.
+static QString encodeColors(const ColorList& colors) {
+    QStringList lines;
+    lines.reserve(colors.size());
+    for (const QColor& c : colors)
+        lines << c.name(QColor::HexArgb);
+    return lines.join(QLatin1Char('\n'));
+}
+
+static ColorList decodeColors(const QString& text) {
+    ColorList colors;
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const QColor c = QColor::fromString(line.trimmed());
+        // A hand-edited or truncated line is skipped rather than stored as
+        // transparent: a swatch that quietly turns into an invisible one is worse
+        // than a shorter palette, and the twenty-entry repair pads it back.
+        if (c.isValid())
+            colors.append(c);
+    }
+    return colors;
+}
+
 // Every persisted setting in the app. Adding one is a row here, a field in
 // SettingsValues and a row in the preferences dialog. Multi-valued settings
 // stay one row each -- the shortcut map and the custom palette are a QMap and a
@@ -108,7 +140,7 @@ constexpr Entry kEntries[] = {
     WP_SETTING("defaults/backgroundColor", defaultBackground, QColor),
     WP_SETTING("defaults/canvasSize", defaultCanvasSize, QString),
     WP_SETTING("colors/palettePreset", palettePreset, int),
-    WP_SETTING("colors/paletteCustom", paletteCustom, ColorList),
+    WP_TEXT_SETTING("colors/paletteCustom", paletteCustom, encodeColors, decodeColors),
     WP_TEXT_SETTING("input/shortcuts", shortcuts, encodeShortcuts, decodeShortcuts),
     WP_SETTING("theme/preference", themePreference, int),
 };
@@ -118,7 +150,7 @@ constexpr Entry kEntries[] = {
 // uses, whatever a stale or hand-edited config says -- a short list would leave
 // the last row of swatches missing rather than showing a default.
 ColorList defaultCustomPalette() {
-    return ColorList(20, QColor("#FFFFFF"));
+    return ColorList(PalettePresets::kCount, QColor("#FFFFFF"));
 }
 
 } // namespace
@@ -181,7 +213,7 @@ void load() {
     QSettings s;
     for (const Entry& e : kEntries)
         e.write(g_values, s.value(QLatin1String(e.key), e.read(g_values)));
-    if (g_values.paletteCustom.size() != 20)
+    if (g_values.paletteCustom.size() != PalettePresets::kCount)
         g_values.paletteCustom = defaultCustomPalette();
 }
 
