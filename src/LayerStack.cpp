@@ -40,23 +40,36 @@ QSize LayerStack::size() const {
     return QSize();
 }
 
-QImage LayerStack::composite() const {
+QImage LayerStack::composite() const { return flatten(-1, -1, true, true); }
+
+// onlyVisible is the difference between what the canvas shows and what a merge
+// is asked to do: a hidden layer is still a layer with pixels in it, and a merge
+// of the layers the user picked has to carry all of them.
+QImage LayerStack::flatten(int first, int last, bool withBackground,
+                           bool onlyVisible) const {
     const QSize sz = size();
     if (sz.isEmpty()) return QImage();
+    if (first < 0) {
+        first = 0;
+        last = m_layers.size() - 1;
+    }
     QImage out(sz, QImage::Format_ARGB32_Premultiplied);
     out.fill(Qt::transparent);
     {
         QPainter p(&out);
         const int bg = backgroundIndex();
         // A hidden background leaves the canvas fully transparent.
-        if (bg >= 0 && m_layers.at(bg).visible) {
+        if (withBackground && bg >= 0 && bg >= first && bg <= last &&
+            m_layers.at(bg).visible) {
             p.fillRect(out.rect(), m_layers.at(bg).backgroundColor);
             p.end();
         }
         p.begin(&out);
-        for (int i = m_layers.size() - 1; i >= 0; --i) {
+        // Index 0 is the topmost, so the drawing order is the list backwards.
+        for (int i = qMin(last, m_layers.size() - 1); i >= first; --i) {
             const Layer& l = m_layers.at(i);
-            if (l.isBackground || !l.visible || l.image.isNull()) continue;
+            if (l.isBackground || l.image.isNull()) continue;
+            if (onlyVisible && !l.visible) continue;
             p.drawImage(0, 0, l.image);
         }
     }
@@ -105,7 +118,10 @@ void LayerStack::addLayer(int index, const Layer& layer) {
     // New layers go above the background (the background is the bottom entry).
     if (backgroundIndex() >= 0 && (index < 0 || index > backgroundIndex()))
         index = backgroundIndex();
-    if (!m_layers.isEmpty() && layer.image.size() != size()) {
+    // With nothing but a background there is no size to conform to -- the
+    // background carries no image -- and resizing to an empty size throws the
+    // layer's pixels away rather than keeping them.
+    if (!m_layers.isEmpty() && !size().isEmpty() && layer.image.size() != size()) {
         Layer copy = layer;
         copy.image = Draw::resizeCanvasImage(copy.image, size());
         m_layers.insert(index < 0 ? 0 : qMin(index, m_layers.size()), copy);
@@ -353,6 +369,99 @@ bool LayerStack::canRemoveAny(const QList<int>& selection) const {
         ++survivors;
     }
     return survivors > 0;
+}
+
+// ---- merging ------------------------------------------------------------
+//
+// A merge is always downward and always whole: the result sits where the top of
+// the run was and carries the name of the bottom of it, because that is the
+// entry the user was looking at when they asked. What happens to a group is not
+// a special case -- flattening a run draws its children in order, so a folder
+// merges by way of its own contents.
+
+int LayerStack::mergeTargetOf(int i) const {
+    if (i < 0 || i >= m_layers.size() || m_layers.at(i).isBackground)
+        return -1;
+    // A folder's own children are part of it, not below it: they run to
+    // i + childCount inclusive, so the first entry after the run is one past
+    // that.
+    int below = isFolder(i) ? i + childCountOf(i) + 1 : i + 1;
+    if (below >= m_layers.size() || m_layers.at(below).isBackground)
+        return -1; // the background is the canvas, not somewhere to merge into
+    return below;
+}
+
+bool LayerStack::canMergeDown(int i) const {
+    if (i < 0 || i >= m_layers.size() || m_layers.at(i).isBackground)
+        return false;
+    if (mergeTargetOf(i) >= 0)
+        return true;
+    // Nothing below, but a group of several can still become the one layer it
+    // is standing in for.
+    return isFolder(i) && spanOf(i).size() > 1;
+}
+
+bool LayerStack::canMergeSelection(const QList<int>& selection) const {
+    const QList<QList<int>> runs = resolveSelection(selection);
+    // A hole in the selection is refused rather than closed: merging across it
+    // would move pixels past layers the user never picked.
+    return runs.size() == 1 && runs.first().size() > 1;
+}
+
+int LayerStack::mergeDown(int i) {
+    const int target = mergeTargetOf(i);
+    if (target < 0) {
+        if (!canMergeDown(i))
+            return -1;
+        return mergeRun(spanOf(i)); // flatten the group where it stands
+    }
+    QList<int> run = spanOf(i);
+    run << target;
+    return mergeRun(run);
+}
+
+int LayerStack::mergeSelected(const QList<int>& selection) {
+    if (!canMergeSelection(selection))
+        return -1;
+    return mergeRun(resolveSelection(selection).first());
+}
+
+int LayerStack::mergeRun(const QList<int>& run) {
+    if (run.size() < 2)
+        return -1;
+    const int first = run.first();
+    const int last = run.last();
+    if (first < 0 || last >= m_layers.size())
+        return -1;
+    if (m_layers.at(first).isBackground || m_layers.at(last).isBackground)
+        return -1;
+
+    Layer merged;
+    merged.name = m_layers.at(last).name;
+    // Hidden means "do not show this", not "this does not exist" -- so a hidden
+    // layer's pixels are part of the merge, and a merge of anything visible
+    // comes out visible. The alternative loses the work on the floor whenever
+    // the layer somebody happened to be merging into was the hidden one.
+    merged.visible = false;
+    for (int k = first; k <= last; ++k)
+        if (m_layers.at(k).visible)
+            merged.visible = true;
+    merged.image = flatten(first, last, false, false);
+
+    m_layers[first] = merged;
+    for (int k = last; k > first; --k)
+        m_layers.removeAt(k);
+    // Whatever folder the run started inside just lost a child.
+    fixChildCounts();
+
+    if (m_active >= first && m_active <= last)
+        m_active = first;
+    else if (m_active > last)
+        m_active -= last - first;
+    clampActive();
+    emit changed();
+    emit activeChanged(m_active);
+    return first;
 }
 
 // Keeps every folder's childCount agreeing with the entries that actually

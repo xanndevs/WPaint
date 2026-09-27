@@ -132,6 +132,8 @@ public slots:
     void pasteLayers(bool above);
     void removeLayers(const QList<int>& selection);
     void groupLayers(const QList<int>& selection);
+    void mergeLayerDown(int index);
+    void mergeLayers(const QList<int>& selection);
     void renameLayers(int index, const QString& name, const QList<int>& alsoSelected);
     void showToast(const QString& message);
 

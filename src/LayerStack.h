@@ -94,6 +94,19 @@ public:
     bool canRemove(int i) const;
     bool canRemoveAny(const QList<int>& selection) const;
     int layerCount() const; // excluding the background
+
+    // ---- merging ----
+    // The entry below `i` that would take its pixels, or -1 when there is none.
+    // A folder skips its own run, so merging one down flattens it and hands the
+    // result to whatever sits below the group.
+    int mergeTargetOf(int i) const;
+    bool canMergeDown(int i) const;
+    bool canMergeSelection(const QList<int>& selection) const;
+    // Both return the index of the merged layer -- the topmost entry of the run,
+    // which is the only place in the list the result could keep -- or -1.
+    int mergeDown(int i);
+    int mergeSelected(const QList<int>& selection);
+
     // Re-derives every folder's childCount from the entries that follow it.
     // Public because MainWindow removes runs of layers itself when the
     // selection spans a group boundary.
@@ -117,6 +130,14 @@ signals:
 
 private:
     void clampActive();
+    // Draws entries first..last (inclusive) bottom-up into one image, topmost
+    // last. A negative `first` means the whole list; withBackground paints the
+    // backdrop colour under them, and onlyVisible is what the canvas shows
+    // rather than what a merge is asked to carry.
+    QImage flatten(int first, int last, bool withBackground, bool onlyVisible) const;
+    // The one step both merges are made of: a contiguous run becomes a single
+    // plain layer at the run's top index.
+    int mergeRun(const QList<int>& run);
     QList<Layer> m_layers;
     int m_active = 0;
 };

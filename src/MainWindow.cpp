@@ -1388,6 +1388,9 @@ void MainWindow::showLayerContextMenu(const QList<int>& selection, const QPoint&
     renameA->setShortcut(Qt::Key_F2);
     QAction* groupA = menu.addAction(tr("Group Layers"));
     menu.addSeparator();
+    QAction* mergeDownA = menu.addAction(tr("Merge Down"));
+    QAction* mergeSelectedA = menu.addAction(tr("Merge Selected"));
+    menu.addSeparator();
     QAction* deleteA = menu.addAction(tr("Delete"));
 
     // With several layers picked there is no single row for a paste to anchor
@@ -1395,6 +1398,13 @@ void MainWindow::showLayerContextMenu(const QList<int>& selection, const QPoint&
     pasteAbove->setEnabled(canPaste);
     pasteBelow->setEnabled(canPaste);
     groupA->setEnabled(canGroup);
+    // Merge Down is a question about one layer, and Merge Selected about a
+    // block, so each is only ever offered to the selection it can answer for.
+    const bool canMergeDown = one && m_stack->canMergeDown(selection.first());
+    mergeDownA->setEnabled(canMergeDown);
+    mergeSelectedA->setEnabled(!one && m_stack->canMergeSelection(selection));
+    if (!canMergeDown && one)
+        mergeDownA->setToolTip(tr("There is nothing below this layer to merge into"));
     deleteA->setEnabled(canDelete);
     if (!canDelete)
         deleteA->setToolTip(tr("A document keeps at least one layer"));
@@ -1408,6 +1418,8 @@ void MainWindow::showLayerContextMenu(const QList<int>& selection, const QPoint&
     else if (chosen == pasteBelow) pasteLayers(false);
     else if (chosen == deleteA) removeLayers(selection);
     else if (chosen == groupA) groupLayers(selection);
+    else if (chosen == mergeDownA) mergeLayerDown(selection.first());
+    else if (chosen == mergeSelectedA) mergeLayers(selection);
     else if (chosen == renameA) {
         // Rename acts on the last row the user touched, then carries the name
         // across the rest of the selection.
@@ -2138,6 +2150,29 @@ void MainWindow::groupLayers(const QList<int>& selection) {
         return;
     m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Group layers")));
     m_layersPanel->setSelection({at});
+}
+
+void MainWindow::mergeLayerDown(int index) {
+    if (!m_stack->canMergeDown(index)) {
+        showToast(tr("There is nothing below this layer to merge into."));
+        return;
+    }
+    int at = -1;
+    runLayerCommand(tr("Merge down"), [this, index, &at] { at = m_stack->mergeDown(index); });
+    if (at >= 0)
+        m_layersPanel->setSelection({at});
+}
+
+void MainWindow::mergeLayers(const QList<int>& selection) {
+    if (!m_stack->canMergeSelection(selection)) {
+        showToast(tr("Only a block of neighbouring layers can be merged."));
+        return;
+    }
+    int at = -1;
+    runLayerCommand(tr("Merge layers"),
+                    [this, selection, &at] { at = m_stack->mergeSelected(selection); });
+    if (at >= 0)
+        m_layersPanel->setSelection({at});
 }
 
 void MainWindow::toggleLayerVisibility(int index, bool visible) {
