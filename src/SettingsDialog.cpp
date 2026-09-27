@@ -463,7 +463,11 @@ void SettingsDialog::reload() {
     m_confirmDiscard->setChecked(Settings::confirmDiscard());
     m_thumbnailQuality->setCurrentIndex(Settings::thumbnailQuality());
     m_undoLimit->setValue(Settings::undoLimit());
-    m_defaultShape->setCurrentIndex(Settings::defaultShape());
+    // The stored value is a ToolId, the combo's index is a gallery position, and
+    // they are not the same number -- setting one where the other belongs is how
+    // the row ends up showing a different shape than the one configured.
+    m_defaultShape->setCurrentIndex(
+        m_defaultShapeIds.indexOf(Settings::defaultShape()));
     m_defaultShapeStyle->setCurrentIndex(Settings::defaultShapeStyle());
     m_defaultBrushStyle->setCurrentIndex(Settings::defaultBrushStyle());
     m_defaultBrushSize->setValue(Settings::defaultBrushSize());
