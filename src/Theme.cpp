@@ -485,6 +485,27 @@ QDialog { background: %4; }
     color: %3; background: %9; border: 1px solid %14;
 }
 #PreferencesHint { color: %10; font-size: %12px; }
+
+/* ---- Preferences shell ---- */
+/* Windows 11 Settings puts the sections in a rail on the left, not in a tab
+   bar across the top: a tab strip has to be one line, and four of these do not
+   fit at a readable width. So the nav is a plain list styled as one. */
+#SettingsNav { background: transparent; border: none; padding: 0; }
+#SettingsNav::item { padding: 7px 10px; border-radius: %6; color: %3; }
+#SettingsNav::item:hover { background: %7; }
+#SettingsNav::item:selected { background: %14; color: %18; }
+#SettingsPage { background: transparent; }
+#SettingsScroll { background: transparent; border: none; }
+#SettingsScroll > QWidget > QWidget { background: transparent; }
+#SettingsPageTitle { font-size: %24px; color: %3; }
+#SettingsPageSub { color: %11; font-size: %12px; }
+#SettingsSection { color: %10; font-size: %12px; padding-top: %31px; }
+#SettingsRow { background: transparent; border-radius: %6; padding: 8px 10px; }
+#SettingsRow:hover { background: %7; }
+#SettingsRowTitle { color: %3; }
+#SettingsRowDesc { color: %11; font-size: %12px; }
+#SettingsKeyValue { color: %11; }
+#SettingsAboutBlurb { color: %11; }
 )QSS")
         .arg(t.fontFamily)      // %1
         .arg(t.pxBase)          // %2
@@ -515,7 +536,8 @@ QDialog { background: %4; }
         .arg(4)                     // %27 popup buttons bottom padding
         .arg(t.radiusXl)            // %28 floating panel radius
         .arg(t.caretBand)            // %29 gallery chevron strip height
-        .arg(t.caretGlyph);          // %30 gallery caret glyph size
+        .arg(t.caretGlyph)           // %30 gallery caret glyph size
+        .arg(8);                      // %31 preferences section top padding
 }
 
 // ------------------------------------------------------------- icons -----

@@ -15,6 +15,7 @@ qt_add_executable(wpaint
     src/Theme.cpp
     src/DrawingUtils.cpp
     src/FluentSlider.cpp
+    src/FluentSwitch.cpp
     src/ColorState.cpp
     src/ColorDialog.cpp
     src/LayerStack.cpp
@@ -27,6 +28,7 @@ qt_add_executable(wpaint
     src/ResizeDialog.cpp
     src/Settings.cpp
     src/SettingsDialog.cpp
+    src/SettingsRow.cpp
     src/MainWindow.cpp
 )
 

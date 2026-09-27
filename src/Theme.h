@@ -86,6 +86,13 @@ struct Tokens {
     // sitting low next to the plain big buttons, and the chevron strip takes
     // the space the lift frees up.
     int glyphLift = 5;
+    // Toggle switch: the track is switchW x switchH and the thumb is inset into
+    // it, so the thumb follows the stroke instead of staying a fixed dot.
+    int switchW = 40;
+    int switchH = 20;
+    int switchThumb = 14;
+    // Preferences shell: the width of the left navigation rail.
+    int settingsNavW = 200;
 
     // Type
     QString fontFamily;

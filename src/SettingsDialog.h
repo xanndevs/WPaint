@@ -1,22 +1,31 @@
 #pragma once
 
 #include <QDialog>
+#include <QListWidget>
+#include <QStackedWidget>
 
-class QRadioButton;
+class FluentSwitch;
 
-// "Preferences" modal (Edit -> Preferences). Deliberately built around one
-// question per setting: a setting that has good and bad values is a pair of
-// radios, a setting that is simply on or off is a checkbox. Values are staged
-// locally and only handed to Settings::apply() on accept, so Cancel is a true
-// no-op.
+// "Preferences" modal: a left rail of sections, a stacked page per section, and
+// the usual Ok / Cancel / Restore Defaults footer.
+//
+// The sections are a rail rather than a tab strip because a tab bar has to fit
+// four labels on one line, and these labels are sentences. The dialog stages
+// its edits and applies them on accept, so Cancel is a true no-op.
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
     explicit SettingsDialog(QWidget* parent = nullptr);
 
-private:
+    // Re-reads every control from the settings table.
     void reload();
 
-    QRadioButton* m_smooth;
-    QRadioButton* m_crisp;
+private:
+    QWidget* addPage(const QString& label);
+    QWidget* pageContent(const QString& title, const QString& subtitle,
+                         QWidget** outScrollArea);
+
+    QListWidget* m_nav = nullptr;
+    QStackedWidget* m_pages = nullptr;
+    FluentSwitch* m_antialias = nullptr;
 };
