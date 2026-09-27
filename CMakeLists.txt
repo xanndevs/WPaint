@@ -20,6 +20,9 @@ qt_add_executable(wpaint
     src/ColorState.cpp
     src/ColorDialog.cpp
     src/LayerStack.cpp
+    src/PaletteEditor.cpp
+    src/PalettePresetCombo.cpp
+    src/PalettePresets.cpp
     src/LayersPanel.cpp
     src/Commands.cpp
     src/Tool.cpp

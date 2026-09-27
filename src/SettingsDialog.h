@@ -1,5 +1,8 @@
 #pragma once
 
+#include "PaletteEditor.h"
+#include "PalettePresetCombo.h"
+
 #include <QDialog>
 #include <QList>
 #include <QListWidget>
@@ -65,4 +68,6 @@ private:
     QWidget* m_primarySwatch = nullptr;
     QWidget* m_secondarySwatch = nullptr;
     QWidget* m_backgroundSwatch = nullptr;
+    PalettePresetCombo* m_palettePreset = nullptr;
+    PaletteEditor* m_paletteEditor = nullptr;
 };

@@ -8,6 +8,7 @@
 #include "Layer.h"
 #include "LayerStack.h"
 #include "LayersPanel.h"
+#include "PalettePresets.h"
 #include "ResizeDialog.h"
 #include "Settings.h"
 #include "SettingsDialog.h"
@@ -58,14 +59,6 @@ namespace {
 
 constexpr QSize kDefaultSize(400, 400);
 constexpr int kPaletteSize = 18;
-
-const QList<QColor> kPalette = {
-    QColor("#FFFFFF"), QColor("#000000"), QColor("#888888"), QColor("#A3867A"),
-    QColor("#E7C69F"), QColor("#F9CB9C"), QColor("#C19171"), QColor("#8E5E3E"),
-    QColor("#6E382E"), QColor("#4C301A"), QColor("#255E6B"), QColor("#5A3562"),
-    QColor("#7AC7E0"), QColor("#2A7AB6"), QColor("#144E73"), QColor("#4B4B5C"),
-    QColor("#90C978"), QColor("#D48AAD"), QColor("#60B04C"), QColor("#B95E2A"),
-};
 
 const QList<BrushStyle> kBrushStyles = {BrushStyle::Round, BrushStyle::Square,
                                         BrushStyle::Spray, BrushStyle::Calligraphy};
@@ -1079,26 +1072,10 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         connect(m_well, &ColorWellButton::secondaryClicked, this,
                 [this] { editColor(false); });
 
-        QWidget* paletteHost = new QWidget(this);
-        paletteHost->setObjectName("PaletteHost");
-        paletteHost->setFixedHeight(2 * kPaletteSize + 2);
-        auto* grid = new QGridLayout(paletteHost);
-        grid->setContentsMargins(0, 0, 0, 0);
-        grid->setSpacing(2);
-        for (int i = 0; i < kPalette.size(); ++i) {
-            const QColor col = kPalette.at(i);
-            auto* b = new PaletteButton(col, kPaletteSize, paletteHost);
-            connect(b, &PaletteButton::clicked, this, [this, col] {
-                m_canvas->setColors(col, m_canvas->secondary());
-                syncColorWell();
-            });
-            connect(b, &QWidget::customContextMenuRequested, this,
-                    [this, col](const QPoint&) {
-                        m_canvas->setColors(m_canvas->primary(), col);
-                        syncColorWell();
-                    });
-            grid->addWidget(b, i / 10, i % 10);
-        }
+        m_paletteHost = new QWidget(this);
+        m_paletteHost->setObjectName("PaletteHost");
+        m_paletteHost->setFixedHeight(2 * kPaletteSize + 2);
+        buildPaletteGrid();
 
         // auto* wheelBtn = new QToolButton(this);
         // wheelBtn->setFixedSize(Theme::tokens().toolbarBtn, Theme::tokens().toolbarBtn);
@@ -1108,7 +1085,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
 
         QList<QWidget*> colorsWidgets;
         m_well->setProperty("wpSpanRows", true);
-        colorsWidgets << m_well << paletteHost;
+        colorsWidgets << m_well << m_paletteHost;
         bar->addWidget(toolCluster(tr("Colors"), colorsWidgets));
     }
     bar->addWidget(divider());
@@ -1496,6 +1473,42 @@ void MainWindow::setThemePreference(Theme::Pref pref) {
     Settings::apply(v);
 }
 
+// The toolbar palette is a preference, so the grid is built from the table and
+// rebuilt when the table changes. It is twenty small widgets rather than one
+// painted strip because each swatch already knows how to hover, show its hex and
+// take a right-click as "set color 2".
+void MainWindow::buildPaletteGrid() {
+    if (!m_paletteHost)
+        return;
+    if (auto* old = m_paletteHost->layout()) {
+        while (old->count() > 0) {
+            QLayoutItem* item = old->takeAt(0);
+            if (QWidget* w = item->widget())
+                w->deleteLater();
+            delete item;
+        }
+        delete old;
+    }
+    auto* grid = new QGridLayout(m_paletteHost);
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setSpacing(2);
+    const QVector<QColor> colors = PalettePresets::effective(
+        Settings::palettePreset(), Settings::paletteCustom());
+    for (int i = 0; i < colors.size(); ++i) {
+        const QColor col = colors.at(i);
+        auto* b = new PaletteButton(col, kPaletteSize, m_paletteHost);
+        connect(b, &PaletteButton::clicked, this, [this, col] {
+            m_canvas->setColors(col, m_canvas->secondary());
+            syncColorWell();
+        });
+        connect(b, &QWidget::customContextMenuRequested, this, [this, col](const QPoint&) {
+            m_canvas->setColors(m_canvas->primary(), col);
+            syncColorWell();
+        });
+        grid->addWidget(b, i / PalettePresets::kColumns, i % PalettePresets::kColumns);
+    }
+}
+
 void MainWindow::applyShortcuts() {
     if (!m_shortcutActions)
         return;
@@ -1509,6 +1522,7 @@ void MainWindow::applyShortcuts() {
 }
 
 void MainWindow::applySettings() {
+    buildPaletteGrid();
     m_canvas->setBoundaryHandlesEnabled(Settings::showBoundaryHandles());
     m_undo->setUndoLimit(Settings::undoLimit());
     m_canvas->update();

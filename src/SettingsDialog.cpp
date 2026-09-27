@@ -2,6 +2,9 @@
 #include "FluentCombo.h"
 #include "FluentSwitch.h"
 #include "Settings.h"
+#include "PaletteEditor.h"
+#include "PalettePresetCombo.h"
+#include "PalettePresets.h"
 #include "SettingsPage.h"
 #include "SettingsRow.h"
 #include "SettingsSwatchButton.h"
@@ -175,6 +178,8 @@ SettingsDialog::SettingsDialog(QWidget* parent) : QDialog(parent) {
         v.defaultPrimary = static_cast<ColorSwatchButton*>(m_primarySwatch)->color();
         v.defaultSecondary = static_cast<ColorSwatchButton*>(m_secondarySwatch)->color();
         v.defaultBackground = static_cast<ColorSwatchButton*>(m_backgroundSwatch)->color();
+        v.palettePreset = m_palettePreset->selected();
+        v.paletteCustom = m_paletteEditor->colors();
         Settings::apply(v);
         accept();
     });
@@ -378,6 +383,25 @@ void SettingsDialog::buildDefaultsPage() {
     backgroundRow->setControl(m_backgroundSwatch);
     body->addWidget(backgroundRow);
 
+    // Palette: the dropdown shows each preset as its own twenty swatches, so the
+    // choice being made is visible rather than remembered. The editor only
+    // exists once Custom is picked -- there is nothing to edit otherwise.
+    auto* paletteRow = new SettingsRow(
+        tr("The colors in the toolbar"),
+        tr("Twenty swatches, shown as the toolbar shows them: the first ten on "
+           "the top row, the next ten below. Pick Custom to build your own set."),
+        w);
+    m_palettePreset = new PalettePresetCombo(paletteRow);
+    m_palettePreset->setMaximumWidth(360);
+    paletteRow->setControl(m_palettePreset);
+    m_paletteEditor = new PaletteEditor(paletteRow);
+    m_paletteEditor->hide();
+    paletteRow->addContent(m_paletteEditor);
+    body->addWidget(paletteRow);
+    connect(m_palettePreset, &QComboBox::currentIndexChanged, this, [this](int at) {
+        m_paletteEditor->setVisible(at == PalettePresets::customIndex());
+    });
+
     body->addWidget(sectionHeader(tr("The document"), w));
     m_defaultCanvasSize = addCombo(
         tr("Start new images at this size"),
@@ -446,4 +470,16 @@ void SettingsDialog::reload() {
     static_cast<ColorSwatchButton*>(m_primarySwatch)->setColor(Settings::defaultPrimary());
     static_cast<ColorSwatchButton*>(m_secondarySwatch)->setColor(Settings::defaultSecondary());
     static_cast<ColorSwatchButton*>(m_backgroundSwatch)->setColor(Settings::defaultBackground());
+
+    QStringList names;
+    QVector<QVector<QColor>> swatches;
+    for (const auto& p : PalettePresets::all()) {
+        names << p.name;
+        swatches << p.colors;
+    }
+    swatches[PalettePresets::customIndex()] = Settings::paletteCustom();
+    m_palettePreset->setPresets(names, swatches);
+    m_palettePreset->setSelected(Settings::palettePreset());
+    m_paletteEditor->setColors(Settings::paletteCustom());
+    m_paletteEditor->setVisible(m_palettePreset->selected() == PalettePresets::customIndex());
 }

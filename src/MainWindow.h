@@ -112,6 +112,7 @@ private:
     // Re-read every binding from the table; called when the Shortcuts page
     // changes one, so a rebind takes effect without a restart.
     void applyShortcuts();
+    void buildPaletteGrid();
     void buildLayerActions(const std::function<QAction*(QAction*, const QString&)>& bind);
     void setThemePreference(Theme::Pref pref);
     QSize documentSizeFromDefaults() const;
@@ -180,6 +181,7 @@ private:
     QHash<QString, std::function<void()>> m_imageTransforms;
     QMenu* m_shapeStyleMenu = nullptr;
     QToolButton* m_layersToggle = nullptr;
+    QWidget* m_paletteHost = nullptr;
     SizeSliderPanel* m_sizePanel;
     LayersPanel* m_layersPanel;
     CopilotPanel* m_copilotPanel;
