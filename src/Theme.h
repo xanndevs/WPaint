@@ -30,6 +30,10 @@ struct Tokens {
     QColor control;         // control rest fill (may be transparent)
     QColor controlHover;
     QColor controlPressed;
+    // Fill for the *selected* rows of a multi-selection. controlHover is not
+    // close enough to the panel's own background to read as a selection at all.
+    QColor selectionFill;
+    QColor selectionHover;
     QColor controlStroke;
     QColor controlStrokeSecondary;
     QColor divider;

@@ -34,6 +34,8 @@ static Tokens makeLight() {
     t.control = QColor("#FFFFFF");
     t.controlHover = QColor("#F2F2F2");
     t.controlPressed = QColor("#E5E5E5");
+    t.selectionFill = QColor("#DCE9F7");
+    t.selectionHover = QColor("#C9DDF2");
     t.controlStroke = QColor("#E0E0E0");
     t.controlStrokeSecondary = QColor("#D0D0D0");
     t.divider = QColor("#E3E3E3");
@@ -75,6 +77,8 @@ static Tokens makeDark() {
     t.control = QColor("#2D2D2D");
     t.controlHover = QColor("#333333");
     t.controlPressed = QColor("#3D3D3D");
+    t.selectionFill = QColor("#16405A");
+    t.selectionHover = QColor("#1E5273");
     t.controlStroke = QColor("#3A3A3A");
     t.controlStrokeSecondary = QColor("#4A4A4A");
     t.divider = QColor("#383838");
@@ -218,7 +222,7 @@ QString stylesheet(const Tokens& t) {
     const QString radiusLg = QString::number(t.radiusLg);
     const QString font = t.fontFamily;
 
-    return QStringLiteral(R"QSS(
+    const QString qss = QStringLiteral(R"QSS(
 * { font-family: "%1"; font-size: %2px; color: %3; outline: none; }
 
 /* ---- Menu bar ---- */
@@ -230,7 +234,7 @@ QMenuBar::item:selected { background: %7; }
 QMenuBar::item:pressed { background: %8; }
 QMenu {
     background: %9; border: 1px solid %5; border-radius: %6;
-    padding: 4px; margin: 0px;
+    padding: 4px 4px %27px;
 }
 QMenu::item {
     padding: 5px 26px 5px 28px; border-radius: %6; margin: 1px 3px;
@@ -451,6 +455,8 @@ QDialog { background: %4; }
    label the on-accent text -- pairing them is what Fluent does and stops the
    hard black/white on a pale grey that read as a colour bug. Weight, not
    colour, is what distinguishes the label. */
+#LayerRow[wpSelected="true"] { background: %30; }
+#LayerRow[wpSelected="true"]:hover { background: %31; }
 #LayerRow[wpActive="true"] { background: %14; }
 #LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
 #LayerRow[wpActive="true"]:hover { background: %15; }
@@ -508,7 +514,7 @@ QDialog { background: %4; }
 #SettingsScroll > QWidget > QWidget { background: transparent; }
 #SettingsPageTitle { font-size: %24px; color: %3; }
 #SettingsPageSub { color: %11; font-size: %12px; }
-#SettingsSection { color: %10; font-size: %12px; padding-top: %31px; }
+#SettingsSection { color: %10; font-size: %12px; padding-top: %29px; }
 #SettingsRow { background: transparent; border-radius: %6; padding: 8px 10px; }
 #SettingsRow:hover { background: %7; }
 #SettingsRowTitle { color: %3; }
@@ -523,37 +529,47 @@ QDialog { background: %4; }
 #SettingsSwatch { border-radius: %6; }
 #SettingsAboutBlurb { color: %11; }
 )QSS")
-        .arg(t.fontFamily)      // %1
-        .arg(t.pxBase)          // %2
-        .arg(c(t.textPrimary))  // %3
-        .arg(c(t.window))       // %4
-        .arg(c(t.divider))      // %5
-        .arg(radiusSm)          // %6
-        .arg(c(t.controlHover)) // %7
-        .arg(c(t.controlPressed)) // %8
-        .arg(c(t.surfaceHigh))  // %9
-        .arg(c(t.textTertiary)) // %10
-        .arg(c(t.textSecondary))// %11
-        .arg(t.pxCaption)       // %12
-        .arg(t.toolbarBtn - 6)  // %13 min size
-        .arg(c(t.accent))       // %14
-        .arg(c(t.accentHover))  // %15
-        .arg(c(t.surfaceAlt))   // %16
-        .arg(c(t.controlStroke))// %17
-        .arg(c(t.textOnAccent)) // %18
-        .arg(c(t.controlStrokeSecondary)) // %19
-        .arg(c(t.accent))       // %20 focus/hover border reuse
-        .arg(c(t.workspace))    // %21
-        .arg(c(t.controlStrokeSecondary)) // %22 scrollbar handle
-        .arg(c(t.controlHover)) // %23 scrollbar hover
-        .arg(t.pxTitle + 4)     // %24
-        .arg(t.pxBase + 1)      // %25
-        .arg(2 * t.toolbarBtn - 6)  // %26 big tool button min size
-        .arg(4)                     // %27 popup buttons bottom padding
-        .arg(t.radiusXl)            // %28 floating panel radius
-        .arg(t.caretBand)            // %29 gallery chevron strip height
-        .arg(t.caretGlyph)           // %30 gallery caret glyph size
-        .arg(8);                      // %31 preferences section top padding
+        // Positional, and every marker must appear in the sheet above:
+        // QString::arg() replaces the lowest marker that is *still present*, so
+        // one token the sheet does not reference shifts every value after it by
+        // one. That is how the multi-selection fill ended up painting with the
+        // gallery chevron's height. The assert at the bottom catches the next
+        // one the moment it is introduced.
+        .arg(t.fontFamily)
+        .arg(QString::number(t.pxBase))
+        .arg(c(t.textPrimary))
+        .arg(c(t.window))
+        .arg(c(t.divider))
+        .arg(radiusSm)
+        .arg(c(t.controlHover))
+        .arg(c(t.controlPressed))
+        .arg(c(t.surfaceHigh))
+        .arg(c(t.textTertiary))
+        .arg(c(t.textSecondary))
+        .arg(QString::number(t.pxCaption))
+        .arg(QString::number(t.toolbarBtn - 6))   // min size
+        .arg(c(t.accent))
+        .arg(c(t.accentHover))
+        .arg(c(t.surfaceAlt))
+        .arg(c(t.controlStroke))
+        .arg(c(t.textOnAccent))
+        .arg(c(t.controlStrokeSecondary))
+        .arg(c(t.accent))                          // focus/hover border reuse
+        .arg(c(t.workspace))
+        .arg(c(t.controlStrokeSecondary))          // scrollbar handle
+        .arg(c(t.controlHover))                    // scrollbar hover
+        .arg(QString::number(t.pxTitle + 4))
+        .arg(QString::number(t.pxBase + 1))
+        .arg(QString::number(2 * t.toolbarBtn - 6))// big tool button min size
+        .arg(QString::number(4))                   // popup menu bottom padding
+        .arg(QString::number(t.radiusXl))          // floating panel radius
+        .arg(QString::number(8))                   // preferences section padding
+        .arg(c(t.selectionFill))                   // multi-selection row fill
+        .arg(c(t.selectionHover))                  // multi-selection row hover
+        ;
+    // A surviving marker means the chain above is out of step with the sheet.
+    Q_ASSERT(!qss.contains(QLatin1Char('%')));
+    return qss;
 }
 
 // ------------------------------------------------------------- icons -----
