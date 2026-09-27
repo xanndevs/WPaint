@@ -857,76 +857,55 @@ void CanvasView::flipCanvas(Qt::Orientation orientation) {
     m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Flip horizontal")));
 }
 
+// Rotating/flipping/resizing a selection works on the floating selection, not
+// on the pixels under the marquee. Welding first (what this used to do) put
+// the result straight back on the layer, so the next 90 degrees re-read the
+// *new* selection box -- which, being the bounding box of the rotated content,
+// no longer matched what the user picked and swept in whatever surrounded it.
+// Lifting and transforming the floating image instead keeps the pixels the user
+// selected together for the whole gesture, and the single undo entry is the
+// weld, exactly as for a move.
 void CanvasView::rotateSelection(qreal degrees) {
     bakeActiveObject();
     if (!m_hasSelection) return;
-    if (m_floatingActive) weldFloating();
-    const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
-    if (src.isEmpty()) return;
+    if (!m_floatingActive) liftSelection();
+    if (!m_floatingActive || m_floating.isNull()) return;
 
-    const int layer = activeLayerIndex();
-    beginEdit(layer);
-    QImage region = Draw::rotateImage(m_stack->layerAt(layer).image.copy(src), degrees);
-    eraseRegion(layer, src);
-    const QPointF center = QRectF(src).center();
-    const QPoint topLeft((center.x() - region.width() / 2.0),
-                         (center.y() - region.height() / 2.0));
-    const QRect pasteRect(topLeft, region.size());
-    Draw::blit(m_stack->layerAt(layer).image, region, pasteRect.topLeft());
-
-    const QRect canvas(0, 0, imageSize().width(), imageSize().height());
-    markDirty(layer, src.united(pasteRect).intersected(canvas));
-    commitEdit(tr("Rotate selection"));
-
-    setSelection(QRectF(center - QPointF(region.width() / 2.0, region.height() / 2.0),
-                        QSizeF(region.size()))
-                     .normalized()
-                     .intersected(QRectF(canvas)));
+    const QPointF center = QRectF(m_floatingPos, QSizeF(m_floating.size())).center();
+    m_floating = Draw::rotateImage(m_floating, degrees);
+    m_floatingPos = center - QPointF(m_floating.width(), m_floating.height()) / 2.0;
+    setSelection(QRectF(m_floatingPos, QSizeF(m_floating.size())));
     requestRepaint();
 }
 
 void CanvasView::flipSelection(Qt::Orientation orientation) {
     bakeActiveObject();
     if (!m_hasSelection) return;
-    if (m_floatingActive) weldFloating();
-    const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
-    if (src.isEmpty()) return;
+    if (!m_floatingActive) liftSelection();
+    if (!m_floatingActive || m_floating.isNull()) return;
 
-    const int layer = activeLayerIndex();
-    beginEdit(layer);
-    QImage region = Draw::flipImage(m_stack->layerAt(layer).image.copy(src), orientation);
-    eraseRegion(layer, src);
-    Draw::blit(m_stack->layerAt(layer).image, region, src.topLeft());
-    markDirty(layer, src);
-    commitEdit(tr("Flip selection"));
+    // A mirror about the centre leaves the bounding box where it was, so the
+    // selection does not move -- only the content inside it does.
+    m_floating = Draw::flipImage(m_floating, orientation);
     requestRepaint();
 }
 
 void CanvasView::transformSelection(const QSize& targetSize, int rotateDegrees) {
     bakeActiveObject();
     if (!m_hasSelection) return;
-    if (m_floatingActive) weldFloating();
-    const QRect src = selectionPixelRect().intersected(QRect(QPoint(0, 0), imageSize()));
-    if (src.isEmpty()) return;
+    if (!m_floatingActive) liftSelection();
+    if (!m_floatingActive || m_floating.isNull()) return;
 
-    const int layer = activeLayerIndex();
-    beginEdit(layer);
-    QImage region = m_stack->layerAt(layer).image.copy(src);
-    const QSize size = targetSize.isEmpty() ? src.size() : targetSize;
-    if (size.width() > 0 && size.height() > 0 && size != region.size())
-        region = region.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    const QPointF center = QRectF(m_floatingPos, QSizeF(m_floating.size())).center();
+    const QSize size = targetSize.isEmpty() ? m_floating.size() : targetSize;
+    if (size.width() > 0 && size.height() > 0 && size != m_floating.size())
+        m_floating = m_floating.scaled(size, Qt::IgnoreAspectRatio,
+                                       Qt::SmoothTransformation);
     if (rotateDegrees != 0)
-        region = Draw::rotateImage(region, rotateDegrees);
+        m_floating = Draw::rotateImage(m_floating, rotateDegrees);
+    m_floatingPos = center - QPointF(m_floating.width(), m_floating.height()) / 2.0;
 
-    eraseRegion(layer, src);
-    const QPointF center = QRectF(src).center();
-    const QPoint topLeft((center.x() - region.width() / 2.0),
-                         (center.y() - region.height() / 2.0));
-    const QRect pasteRect(topLeft, region.size());
-    Draw::blit(m_stack->layerAt(layer).image, region, pasteRect.topLeft());
-
-    markDirty(layer, src.united(pasteRect).intersected(QRect(QPoint(0, 0), imageSize())));
-    commitEdit(tr("Transform selection"));
+    setSelection(QRectF(m_floatingPos, QSizeF(m_floating.size())));
     requestRepaint();
 }
 
