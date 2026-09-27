@@ -457,6 +457,11 @@ QDialog { background: %4; }
    colour, is what distinguishes the label. */
 #LayerRow[wpSelected="true"] { background: %30; }
 #LayerRow[wpSelected="true"]:hover { background: %31; }
+/* Where a drag would land. A line for "before this row", a filled row for
+   "inside this group" -- the view's own drop indicator can only draw the
+   first of those, and a collapsed group has to be droppable into. */
+#LayerRow[wpDropBefore="true"] { border-top: 3px solid %14; }
+#LayerRow[wpDropInto="true"] { background: %30; border: 2px solid %14; }
 #LayerRow[wpActive="true"] { background: %14; }
 #LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
 #LayerRow[wpActive="true"]:hover { background: %15; }

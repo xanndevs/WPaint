@@ -238,12 +238,25 @@ int LayerStack::moveSpan(int from, int to, bool intoFolder) {
     if (at < 0)
         return -1;
     const int n = isFolder(from) ? childCountOf(from) + 1 : 1;
+    // The group the run is leaving, and the one it is joining, have to be told:
+    // nothing else in a flat list knows that a run landing below a folder header
+    // is now that folder's business. Left alone, the group keeps claiming its
+    // old children and the run sits inside the list unowned -- which is not a
+    // cosmetic miscount, it is the difference between a layer being inside a
+    // group and merely being next to one.
+    const int lost = owningFolder(from);
     const QList<Layer> run = m_layers.mid(from, n);
     m_layers.remove(from, n);
     // QList has no run-insert, and inserting one at a time from `at` upwards
     // keeps the run's own order.
     for (int k = 0; k < n; ++k)
         m_layers.insert(at + k, run.at(k));
+    // A folder above where the run used to be has shifted down by it.
+    if (lost >= 0 && at <= lost)
+        m_layers[lost + n].childCount = qMax(0, m_layers[lost + n].childCount - n);
+    const int gained = owningFolder(at);
+    if (gained >= 0)
+        m_layers[gained].childCount += n;
     // The entry that was active is still active, wherever it ended up.
     if (m_active >= from && m_active < from + n)
         m_active = at;

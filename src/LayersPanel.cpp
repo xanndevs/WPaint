@@ -5,8 +5,14 @@
 #include "Settings.h"
 #include "Theme.h"
 
+#include <QDrag>
+#include <QDragEnterEvent>
+#include <QDragLeaveEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QMimeData>
 #include <QLabel>
 #include <QLineEdit>
 #include <QItemSelectionModel>
@@ -15,6 +21,7 @@
 #include <QPainter>
 #include <QStyle>
 #include <algorithm>
+#include <functional>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -58,6 +65,149 @@ QIcon foldChevron(bool folded, const QColor& tint) {
                        14, tint);
 }
 
+// Extra data role: is this row a folder? The list needs it to know that a drop
+// on the row means "into it" rather than "before it", and that is a question
+// about the row, not about the stack.
+constexpr int kFolderRole = Qt::UserRole + 1;
+
+const char kDragFormat[] = "application/x-wpaint-layers";
+
+// The rail's list, with a drag of its own.
+//
+// QListWidget's InternalMove is no use here on three counts: it moves a row,
+// while a drag has to move a whole group with everything in it; it cannot drop
+// *into* a row, which is the only thing a collapsed group can be dropped into;
+// and it reports the move as rowsMoved(), which the shell then had to translate
+// back into stack indices that no longer meant what they did. So the drag is
+// started here, with the layers' own indices in the mime data, and the drop is
+// reported as a row and what was meant by it -- the list knows rows, the panel
+// knows the stack, and each is asked only what it can answer.
+class LayerList : public QListWidget {
+public:
+    explicit LayerList(QWidget* parent = nullptr) : QListWidget(parent) {}
+
+    // (row, onto a folder row). -1 for the row means "past the last one".
+    using DropFn = std::function<void(int, bool)>;
+    void setDropHandler(DropFn fn) { m_onDrop = std::move(fn); }
+
+protected:
+    void startDrag(Qt::DropActions supportedActions) override {
+        Q_UNUSED(supportedActions);
+        const QList<QListWidgetItem*> items = selectedItems();
+        if (items.isEmpty())
+            return;
+        // The stack indices, not the rows: a row is a position in this widget
+        // and says nothing about which layer it is once a group is folded.
+        QStringList ids;
+        for (QListWidgetItem* item : items)
+            ids << item->data(Qt::UserRole).toString();
+        auto* mime = new QMimeData;
+        mime->setData(QLatin1String(kDragFormat), ids.join(QLatin1Char(',')).toUtf8());
+        auto* drag = new QDrag(this);
+        drag->setMimeData(mime);
+        // A stack of the rows being moved, so the pointer carries something.
+        QPixmap carried;
+        for (QListWidgetItem* item : items) {
+            if (QWidget* row = itemWidget(item))
+                carried = row->grab();
+        }
+        if (!carried.isNull()) {
+            drag->setPixmap(carried.scaledToWidth(
+                qMin(180, carried.width()), Qt::SmoothTransformation));
+            drag->setHotSpot(QPoint(20, carried.height() / 2));
+        }
+        drag->exec(Qt::MoveAction, Qt::MoveAction);
+    }
+
+    void dragMoveEvent(QDragMoveEvent* ev) override {
+        const int row = rowAt(ev->position().toPoint());
+        const bool onto = row >= 0 && row < count() && isFolderRow(row);
+        // A drop below the last row is a drop at the end of the stack, not a
+        // refusal: the background is the only thing below the last row and it
+        // cannot be a target, but the space above it is the bottom of the rail.
+        const bool usable = row >= 0 || ev->position().toPoint().y() >=
+                                              (row < 0 ? height() : 0);
+        if (usable) {
+            ev->acceptProposedAction();
+            highlight(row, onto);
+        } else {
+            ev->ignore();
+            highlight(-1, false);
+        }
+    }
+
+    void dragLeaveEvent(QDragLeaveEvent* ev) override {
+        highlight(-1, false);
+        QListWidget::dragLeaveEvent(ev);
+    }
+
+    void dropEvent(QDropEvent* ev) override {
+        const bool landed = dropAt(ev->position().toPoint());
+        if (landed)
+            ev->acceptProposedAction();
+        else
+            ev->ignore();
+    }
+
+public:
+    // What a drop at this point in the list means, and the doing of it. Public so
+    // the rule can be exercised without a live drag: Qt delivers real drops
+    // through the drag manager, which will not route a synthetic one.
+    bool dropAt(const QPoint& at) {
+        const int row = rowAt(at);
+        // Below the last row is the bottom of the stack, not a refusal: the
+        // background is the only thing down there and it cannot be a target, but
+        // the space above it is simply the end of the rail.
+        const bool past = row < 0 && at.y() >= 0 && at.y() <= viewport()->height();
+        if (row < 0 && !past) {
+            highlight(-1, false);
+            return false;
+        }
+        const bool onto = row >= 0 && isFolderRow(row);
+        highlight(-1, false);
+        if (!m_onDrop)
+            return false;
+        m_onDrop(row >= 0 ? row : count() - 1, onto);
+        return true;
+    }
+
+private:
+
+    int rowAt(const QPoint& at) const {
+        const QModelIndex index = indexAt(at);
+        return index.isValid() ? index.row() : -1;
+    }
+
+    bool isFolderRow(int row) const {
+        QListWidgetItem* item = const_cast<LayerList*>(this)->item(row);
+        return item && item->data(kFolderRole).toBool();
+    }
+
+    // The drop is shown on the row widget rather than by the view's own
+    // indicator, which draws a line between rows and so cannot say "into this".
+    void highlight(int row, bool onto) {
+        if (row == m_markRow && onto == m_markInto)
+            return;
+        m_markRow = row;
+        m_markInto = onto;
+        for (int r = 0; r < count(); ++r) {
+            QWidget* w = itemWidget(item(r));
+            if (!w)
+                continue;
+            const bool mark = r == row;
+            w->setProperty("wpDropInto", mark && onto);
+            w->setProperty("wpDropBefore", mark && !onto);
+            w->style()->unpolish(w);
+            w->style()->polish(w);
+            w->update();
+        }
+    }
+
+    DropFn m_onDrop;
+    int m_markRow = -1;
+    bool m_markInto = false;
+};
+
 } // namespace
 
 LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
@@ -68,12 +218,23 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
 
     m_count = new QLabel("Layer 1", this);
     m_count->setObjectName("LayersCount");
-    m_list = new QListWidget(this);
+    m_list = new LayerList(this);
     m_list->setObjectName("LayersList");
     // Extended rather than single: ctrl-click is how you pick several layers to
     // move, copy or group, and every one of those needs more than one.
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    m_list->setDragDropMode(QAbstractItemView::InternalMove);
+    // DragDrop, not InternalMove: the view's own move is a row move, and a drag
+    // here has to carry a whole group and be able to land inside a collapsed
+    // one. LayerList does both and hands the panel a row to interpret.
+    m_list->setDragDropMode(QAbstractItemView::DragDrop);
+    m_list->setDragEnabled(true);
+    m_list->setAcceptDrops(true);
+    m_list->setDropIndicatorShown(false);
+    m_list->viewport()->setAcceptDrops(true);
+    // Drops are routed by Qt's drag manager through the top-level widget, so the
+    // window has to be willing to take them or the list never hears about it.
+    if (window())
+        window()->setAcceptDrops(true);
     m_list->setDefaultDropAction(Qt::MoveAction);
     m_list->setDragDropOverwriteMode(false);
     m_list->setUniformItemSizes(true);
@@ -209,18 +370,8 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
             });
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
     m_list->viewport()->installEventFilter(this);
-    connect(m_list->model(), &QAbstractItemModel::rowsMoved, this,
-            [this](const QModelIndex& parent, int start, int end,
-                   const QModelIndex& dest, int row) {
-                Q_UNUSED(parent);
-                Q_UNUSED(dest);
-                Q_UNUSED(end);
-                const int from = start;
-                const int to = row > from ? row - 1 : row;
-                rebuildList();
-                if (from != to)
-                    emit moveRequested(from, to);
-            });
+    static_cast<LayerList*>(m_list)->setDropHandler(
+        [this](int row, bool ontoFolder) { handleDrop(row, ontoFolder); });
 
     connect(m_stack, &LayerStack::changed, this, &LayersPanel::rebuildList);
     connect(m_stack, &LayerStack::activeChanged, this,
@@ -243,6 +394,36 @@ QList<int> LayersPanel::selectedIndices() const {
     }
     std::sort(out.begin(), out.end());
     return out;
+}
+
+// A drop arrives as a row, which only means anything once it is turned back into
+// the layers it stands for. A run with a hole in it is refused for the same
+// reason grouping one is: moving across the gap would drag layers the user did
+// not pick. Returns whether the drop was one that can be acted on.
+bool LayersPanel::handleDrop(int row, bool ontoFolder) {
+    const QList<QList<int>> runs = m_stack->resolveSelection(selectedIndices());
+    if (runs.size() != 1 || runs.first().isEmpty()) {
+        emit moveRefused();
+        return false;
+    }
+    // A drop on a group row means inside it; a drop on any other row means "take
+    // its place", so the target is the row below it. The last row has no row
+    // below it, and the bottom of the stack is the layer above the background.
+    int to = -1;
+    if (ontoFolder) {
+        to = indexOfRow(row);
+    } else {
+        to = indexOfRow(row + 1);
+        if (to < 0)
+            to = m_stack->backgroundIndex() >= 0 ? m_stack->backgroundIndex()
+                                                 : m_stack->count();
+    }
+    if (to < 0) {
+        emit moveRefused();
+        return false;
+    }
+    emit moveRequested(runs.first().first(), to, ontoFolder);
+    return true;
 }
 
 int LayersPanel::rowOfIndex(int index) const {
@@ -420,6 +601,7 @@ void LayersPanel::rebuildList() {
 
         QListWidgetItem* item = new QListWidgetItem(m_list);
         item->setData(Qt::UserRole, i);
+        item->setData(kFolderRole, isFolder);
 
         QWidget* row = new QWidget(this);
         row->setObjectName("LayerRow");

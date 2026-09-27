@@ -47,12 +47,23 @@ public:
     // double-click.
     void beginRenameAt(int index);
 
+    // A drag of the current selection was dropped on this row -- ontoFolder says
+    // the row is a group and the drop meant "inside it". False when the drop was
+    // one that cannot be made, which the caller says out loud. Public because
+    // Qt will not route a synthetic drop event, and the rule is worth testing.
+    bool handleDrop(int row, bool ontoFolder);
+
     bool hasFocus() const;
 
 signals:
     void activeRequested(int layerIndex);
     void visibilityRequested(int layerIndex, bool visible);
-    void moveRequested(int from, int to);
+    // A dragged run of layers, from its first index to the index it should land
+    // before -- or, with intoFolder, at the top of that folder instead.
+    void moveRequested(int from, int to, bool intoFolder);
+    // The drop was one the model will not make, e.g. a selection with a hole in
+    // it. The shell says so in a toast rather than doing it anyway.
+    void moveRefused();
     void addRequested();
     void removeRequested(int layerIndex);
     void removeSelectionRequested(QList<int> selection);
