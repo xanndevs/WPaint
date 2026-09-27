@@ -33,6 +33,36 @@ using ShortcutMap = QMap<QString, QString>;
             [](SettingsValues& v, const QVariant& q) { v.field = q.value<type>(); } \
     }
 
+// For the one field that is a container. A QSettings QVariantMap is written as a
+// quoted string holding the variant's bytes, which does survive a round trip --
+// and only because Qt happens to decode a variant smuggled inside a string when
+// reading it back. That is unreadable in the config file and fragile across a Qt
+// version, so this one is stored as plain text: one "id=sequence" per line.
+#define WP_TEXT_SETTING(key, field, encode, decode)                         \
+    {                                                                        \
+        key,                                                                 \
+            [](const SettingsValues& v) -> QVariant { return encode(v.field); }, \
+                [](SettingsValues& v, const QVariant& q) { v.field = decode(q.toString()); } \
+    }
+
+static QString encodeShortcuts(const ShortcutMap& m) {
+    QStringList lines;
+    for (auto it = m.constBegin(); it != m.constEnd(); ++it)
+        lines << it.key() + QLatin1Char('=') + it.value();
+    return lines.join(QLatin1Char('\n'));
+}
+
+static ShortcutMap decodeShortcuts(const QString& text) {
+    ShortcutMap m;
+    const QStringList lines = text.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+    for (const QString& line : lines) {
+        const int split = line.indexOf(QLatin1Char('='));
+        if (split > 0)
+            m.insert(line.left(split), line.mid(split + 1));
+    }
+    return m;
+}
+
 // Every persisted setting in the app. Adding one is a row here, a field in
 // SettingsValues and a row in the preferences dialog. Multi-valued settings
 // stay one row each -- the shortcut map and the custom palette are a QMap and a
@@ -57,11 +87,10 @@ constexpr Entry kEntries[] = {
     WP_SETTING("defaults/canvasSize", defaultCanvasSize, QString),
     WP_SETTING("colors/palettePreset", palettePreset, int),
     WP_SETTING("colors/paletteCustom", paletteCustom, ColorList),
-    WP_SETTING("input/shortcuts", shortcuts, ShortcutMap),
+    WP_TEXT_SETTING("input/shortcuts", shortcuts, encodeShortcuts, decodeShortcuts),
     WP_SETTING("theme/preference", themePreference, int),
 };
 
-#undef WP_SETTING
 
 // The palette always has 20 entries, in the same 10x2 order the toolbar grid
 // uses, whatever a stale or hand-edited config says -- a short list would leave

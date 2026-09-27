@@ -2,18 +2,21 @@
 
 #include "PaletteEditor.h"
 #include "PalettePresetCombo.h"
+#include "Settings.h"
+#include "SettingsRow.h"
 
 #include <QDialog>
+#include <QHash>
 #include <QList>
 #include <QListWidget>
 #include <QStackedWidget>
+#include <functional>
 
 class FluentSwitch;
 class QComboBox;
-class SettingsPage;
 class QSpinBox;
-class QLabel;
-class QVBoxLayout;
+class SettingsPage;
+class SettingsRow;
 
 // "Preferences" modal: a left rail of sections, a stacked page per section, and
 // the usual Ok / Cancel / Restore Defaults footer.
@@ -21,53 +24,47 @@ class QVBoxLayout;
 // The sections are a rail rather than a tab strip because a tab bar has to fit
 // four labels on one line, and these labels are sentences. The dialog stages
 // its edits and applies them on accept, so Cancel is a true no-op.
+//
+// Every page is built from a flat list of RowSpec. All the wording -- the
+// sentence that names a setting and the one that explains it -- lives in that
+// list, at the top of the page's builder, because prose is the part of a
+// preferences dialog that gets edited most and is the part a layout statement
+// buries worst.
 class SettingsDialog : public QDialog {
     Q_OBJECT
 public:
     explicit SettingsDialog(QWidget* parent = nullptr);
 
-    // Re-reads every control from the settings table.
     void reload();
 
+    // A row's explanation is a tooltip by default; Inline is for the one or two
+    // settings on a page where the explanation is the point and a hover would be
+    // too easy to miss. See SettingsRow::Description.
+    using Description = SettingsRow::Description;
+
+    struct RowSpec {
+        const char* section; // the heading this row sits under; "" continues the last
+        const char* id;      // key into the control map
+        const char* title;   // the sentence
+        const char* description;
+        Description desc = Description::Tooltip;
+        // Builds the control, parents it to the row, and returns it.
+        std::function<QWidget*(SettingsRow*)> make;
+        // Reads the control back into the values, on accept.
+        std::function<void(SettingsValues&, QWidget*)> write;
+    };
+
 private:
+    void buildPage(const QList<RowSpec>& specs, const QString& title,
+                   const QString& subtitle);
     void buildBehaviorPage();
-    void buildShortcutsPage();
     void buildDefaultsPage();
+    void buildShortcutsPage();
     void buildAboutPage();
-    // A row of two titled labels with one control on the right.
-    FluentSwitch* addSwitch(const QString& title, const QString& description,
-                            bool checked, QWidget* page, QVBoxLayout* body);
-    QComboBox* addCombo(const QString& title, const QString& description,
-                        const QStringList& items, int index, QWidget* page,
-                        QVBoxLayout* body);
 
     QListWidget* m_nav = nullptr;
     QStackedWidget* m_pages = nullptr;
-    QWidget* m_behaviorPage = nullptr;
-    QWidget* m_defaultsPage = nullptr;
-    QVBoxLayout* m_behaviorBody = nullptr;
-    QVBoxLayout* m_defaultsBody = nullptr;
-
     SettingsPage* m_shortcuts = nullptr;
-    FluentSwitch* m_antialias = nullptr;
-    FluentSwitch* m_crispMagnified = nullptr;
-    FluentSwitch* m_boundaryHandles = nullptr;
-    FluentSwitch* m_spaceWheel = nullptr;
-    FluentSwitch* m_smoothShapes = nullptr;
-    FluentSwitch* m_smoothText = nullptr;
-    FluentSwitch* m_confirmDiscard = nullptr;
-    QComboBox* m_thumbnailQuality = nullptr;
-    QSpinBox* m_undoLimit = nullptr;
-
-    QComboBox* m_defaultShape = nullptr;
-    QList<int> m_defaultShapeIds;
-    QComboBox* m_defaultShapeStyle = nullptr;
-    QComboBox* m_defaultBrushStyle = nullptr;
-    QSpinBox* m_defaultBrushSize = nullptr;
-    QComboBox* m_defaultCanvasSize = nullptr;
-    QWidget* m_primarySwatch = nullptr;
-    QWidget* m_secondarySwatch = nullptr;
-    QWidget* m_backgroundSwatch = nullptr;
-    PalettePresetCombo* m_palettePreset = nullptr;
-    PaletteEditor* m_paletteEditor = nullptr;
+    QHash<QString, QWidget*> m_controls;
+    QHash<QString, std::function<void(SettingsValues&, QWidget*)>> m_writers;
 };
