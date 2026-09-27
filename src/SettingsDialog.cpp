@@ -247,6 +247,15 @@ void SettingsDialog::buildBehaviorPage() {
          [](SettingsValues& out, QWidget* w) {
              out.showBoundaryHandles = static_cast<FluentSwitch*>(w)->isChecked();
          }},
+        {"Layers", "newFoldersFolded", "Start a new group folded",
+         "A group of nine layers arriving as nine expanded rows has not tidied "
+         "anything. With this on, a new group opens collapsed and you expand it "
+         "when you want it.",
+         Desc::Tooltip,
+         [](SettingsRow* r) { return makeSwitch(r); },
+         [](SettingsValues& out, QWidget* w) {
+             out.newFoldersFolded = static_cast<FluentSwitch*>(w)->isChecked();
+         }},
         {"Tools", "smoothShapes", "Smooth the outlines of shapes you draw",
          "Blend the edge of a rectangle, line or arrow into the pixels around it. "
          "Turn it off to keep every shape perfectly hard-edged.",
@@ -594,6 +603,7 @@ void SettingsDialog::reload() {
     sw("antialias")->setChecked(v.antialiasCanvas);
     sw("crispAbove100")->setChecked(v.crispPixelsWhenMagnified);
     sw("boundaryHandles")->setChecked(v.showBoundaryHandles);
+    sw("newFoldersFolded")->setChecked(v.newFoldersFolded);
     sw("smoothShapes")->setChecked(v.smoothShapes);
     sw("smoothText")->setChecked(v.smoothText);
     sw("spaceWheel")->setChecked(v.spaceWheelBrushSize);

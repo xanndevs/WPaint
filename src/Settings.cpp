@@ -71,6 +71,7 @@ constexpr Entry kEntries[] = {
     WP_SETTING("canvas/antialias", antialiasCanvas, bool),
     WP_SETTING("canvas/crispAbove100", crispPixelsWhenMagnified, bool),
     WP_SETTING("canvas/showBoundaryHandles", showBoundaryHandles, bool),
+    WP_SETTING("layers/newFoldersFolded", newFoldersFolded, bool),
     WP_SETTING("tools/smoothShapes", smoothShapes, bool),
     WP_SETTING("text/antialias", smoothText, bool),
     WP_SETTING("tools/spaceWheelBrushSize", spaceWheelBrushSize, bool),
@@ -108,6 +109,7 @@ const SettingsValues& values() { return g_values; }
 bool antialiasCanvas() { return g_values.antialiasCanvas; }
 bool crispPixelsWhenMagnified() { return g_values.crispPixelsWhenMagnified; }
 bool showBoundaryHandles() { return g_values.showBoundaryHandles; }
+bool newFoldersFolded() { return g_values.newFoldersFolded; }
 bool smoothShapes() { return g_values.smoothShapes; }
 bool smoothText() { return g_values.smoothText; }
 bool spaceWheelBrushSize() { return g_values.spaceWheelBrushSize; }

@@ -183,6 +183,10 @@ signals:
     // Right-click inside a selection. MainWindow owns the clipboard and the
     // transform entry points, so the menu is assembled there.
     void selectionContextRequested();
+    // The active layer is a group, or something hidden inside one, so there is
+    // nothing to paint on. The shell turns this into a toast: refusing silently
+    // looks like a broken mouse, and a dialog is too much for a mis-click.
+    void editableLayerRequired();
 
 protected:
     void paintEvent(QPaintEvent* ev) override;

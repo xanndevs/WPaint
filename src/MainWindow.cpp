@@ -5,6 +5,7 @@
 #include "CopilotPanel.h"
 #include "Commands.h"
 #include "FluentSlider.h"
+#include "FluentToast.h"
 #include "Layer.h"
 #include "LayerStack.h"
 #include "LayersPanel.h"
@@ -19,6 +20,7 @@
 #include <QAction>
 #include <QActionGroup>
 #include <QApplication>
+#include <algorithm>
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDockWidget>
@@ -477,6 +479,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     // the canvas value, not the other way round, so it has to follow.
     connect(m_canvas, &CanvasView::brushSizeChanged, m_sizePanel,
             &SizeSliderPanel::setSize);
+    connect(m_canvas, &CanvasView::editableLayerRequired, this, [this] {
+        showToast(tr("No editable layer is selected. A group holds layers, it is "
+                     "not one you can draw on."));
+    });
 
     connect(m_layersPanel, &LayersPanel::activeRequested, this,
             [this](int index) { m_canvas->setActiveLayer(index); });
@@ -488,12 +494,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                                 [this, from, to] { m_stack->moveLayer(from, to); });
             });
     connect(m_layersPanel, &LayersPanel::addRequested, this, &MainWindow::addLayer);
-    connect(m_layersPanel, &LayersPanel::removeRequested, this,
-            &MainWindow::removeLayer);
-    connect(m_layersPanel, &LayersPanel::renameRequested, this,
-            &MainWindow::renameLayer);
+    connect(m_layersPanel, &LayersPanel::removeSelectionRequested, this,
+            [this](QList<int> sel) { removeLayers(sel); });
+    connect(m_layersPanel, &LayersPanel::renameFinished, this,
+            &MainWindow::renameLayers);
+    connect(m_layersPanel, &LayersPanel::folderRequested, this,
+            [this](QList<int> sel) { groupLayers(sel); });
+    connect(m_layersPanel, &LayersPanel::foldedRequested, this,
+            [this](int index, bool folded) {
+                runLayerCommand(tr("Collapse group"),
+                                [this, index, folded] { m_stack->setFolded(index, folded); });
+            });
     connect(m_layersPanel, &LayersPanel::backgroundEditRequested, this,
             &MainWindow::editBackgroundColor);
+    connect(m_layersPanel, &LayersPanel::contextRequested, this,
+            [this](QList<int> sel, const QPoint& at) { showLayerContextMenu(sel, at); });
     // Keep the thumbnails in step with drawing. LayerStack::changed only fires
     // for structural edits, so without this a layer preview would not update
     // until something resized, rotated or flipped the document.
@@ -1312,6 +1327,156 @@ void MainWindow::buildDocks() {
     // m_copilotDock->hide();
     // // stack below the layers panel
     resizeDocks({m_layersDock, /**m_copilotDock */}, {200,}, Qt::Vertical);
+    buildLayerClipboardActions();
+
+    // The toast floats over the whole window rather than the canvas: it is
+    // about the document, not about where the pointer is.
+    m_toast = new FluentToast(this);
+    m_toast->hide();
+    m_toast->lower();
+}
+
+// The rail's own Ctrl+C / X / V. Scoped to the panel so they cannot fight the
+// image clipboard: the same three keys mean "copy the picture" everywhere else
+// in the app, and a shortcut that changed meaning depending on which widget
+// last had focus would be worse than no shortcut at all.
+void MainWindow::buildLayerClipboardActions() {
+    auto scoped = [this](const QString& text, const QKeySequence& keys,
+                         const std::function<void()>& fn) {
+        auto* a = new QAction(text, this);
+        a->setShortcut(keys);
+        a->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+        connect(a, &QAction::triggered, this, fn);
+        m_layersPanel->addAction(a);
+        return a;
+    };
+    scoped(tr("Copy layers"), QKeySequence(QKeySequence::Copy),
+           [this] { copyLayers(m_layersPanel->selectedIndices(), false); });
+    scoped(tr("Cut layers"), QKeySequence(QKeySequence::Cut),
+           [this] { copyLayers(m_layersPanel->selectedIndices(), true); });
+    m_pasteAboveAction =
+        scoped(tr("Paste layers above"), QKeySequence(QKeySequence::Paste),
+               [this] { pasteLayers(true); });
+    m_pasteBelowAction =
+        scoped(tr("Paste layers below"), QKeySequence(QKeySequence::Paste),
+               [this] { pasteLayers(false); });
+    m_pasteAboveAction->setShortcutContext(Qt::WidgetWithChildrenShortcut);
+    m_pasteBelowAction->setEnabled(false);
+}
+
+// The rail's context menu. One menu for both cases, because the operations are
+// the same list; what differs is which of them make sense, and a menu that
+// greys out three entries to say "not now" is a worse answer than a shorter one.
+void MainWindow::showLayerContextMenu(const QList<int>& selection, const QPoint& at) {
+    if (selection.isEmpty()) return;
+    const bool one = selection.size() == 1;
+    const bool hasClipboard = !m_layerClipboard.isEmpty();
+    const bool canPaste = hasClipboard && one;
+    const bool canGroup = !one && m_stack->resolveSelection(selection).size() == 1;
+    const bool canDelete = m_stack->canRemoveAny(selection);
+
+    QMenu menu(this);
+    QAction* copyA = menu.addAction(tr("Copy"));
+    copyA->setShortcut(QKeySequence(QKeySequence::Copy));
+    QAction* cutA = menu.addAction(tr("Cut"));
+    cutA->setShortcut(QKeySequence(QKeySequence::Cut));
+    menu.addSeparator();
+    QAction* pasteAbove = menu.addAction(tr("Paste Above"));
+    QAction* pasteBelow = menu.addAction(tr("Paste Below"));
+    menu.addSeparator();
+    QAction* renameA = menu.addAction(tr("Rename"));
+    renameA->setShortcut(Qt::Key_F2);
+    QAction* groupA = menu.addAction(tr("Group Layers"));
+    menu.addSeparator();
+    QAction* deleteA = menu.addAction(tr("Delete"));
+
+    // With several layers picked there is no single row for a paste to anchor
+    // to -- above which one? -- so those two are refused rather than guessed at.
+    pasteAbove->setEnabled(canPaste);
+    pasteBelow->setEnabled(canPaste);
+    groupA->setEnabled(canGroup);
+    deleteA->setEnabled(canDelete);
+    if (!canDelete)
+        deleteA->setToolTip(tr("A document keeps at least one layer"));
+
+    QAction* chosen = menu.exec(at);
+    if (!chosen) return;
+
+    if (chosen == copyA) copyLayers(selection, false);
+    else if (chosen == cutA) copyLayers(selection, true);
+    else if (chosen == pasteAbove) pasteLayers(true);
+    else if (chosen == pasteBelow) pasteLayers(false);
+    else if (chosen == deleteA) removeLayers(selection);
+    else if (chosen == groupA) groupLayers(selection);
+    else if (chosen == renameA) {
+        // Rename acts on the last row the user touched, then carries the name
+        // across the rest of the selection.
+        const int last = m_layersPanel->lastSelectedIndex();
+        const int target = last >= 0 && selection.contains(last) ? last : selection.first();
+        m_layersPanel->beginRenameAt(target);
+    }
+}
+
+void MainWindow::showToast(const QString& message) {
+    if (!m_toast) {
+        m_toast = new FluentToast(this);
+        m_toast->hide();
+    }
+    m_toast->raise();
+    m_toast->show(message);
+}
+
+void MainWindow::copyLayers(const QList<int>& selection, bool cut) {
+    const QList<QList<int>> runs = m_stack->resolveSelection(selection);
+    if (runs.isEmpty())
+        return;
+    // Topmost first: the rail reads down, and a paste that comes back in the
+    // order it was copied is the one people expect.
+    m_layerClipboard.clear();
+    for (const QList<int>& run : runs) {
+        for (int index : run)
+            m_layerClipboard.append(m_stack->layerAt(index));
+    }
+    // A copied background would arrive as a second backdrop, which the model
+    // refuses and the user cannot see. It is not a layer, so it does not copy.
+    m_layerClipboard.removeIf([](const Layer& l) { return l.isBackground; });
+    m_layerClipboard.removeIf([](const Layer& l) { return l.isFolder; });
+    if (m_pasteAboveAction) {
+        m_pasteAboveAction->setEnabled(!m_layerClipboard.isEmpty());
+        m_pasteBelowAction->setEnabled(!m_layerClipboard.isEmpty());
+    }
+    if (cut)
+        removeLayers(selection);
+}
+
+void MainWindow::pasteLayers(bool above) {
+    if (m_layerClipboard.isEmpty())
+        return;
+    const QList<int> selection = m_layersPanel->selectedIndices();
+    if (selection.isEmpty())
+        return;
+    const int top = selection.first();
+    const int bottom = selection.last();
+    // Above the selection's top, below its bottom. Both anchor to the
+    // selection rather than to the active row, so a five-layer paste lands
+    // where the five rows the user picked are.
+    const int at = above ? top : bottom + 1;
+
+    const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
+    m_canvas->bakeActiveObject();
+    QList<int> inserted;
+    for (int k = 0; k < m_layerClipboard.size(); ++k) {
+        Layer copy = m_layerClipboard.at(k);
+        copy.isBackground = false;
+        copy.name = m_stack->nextName(copy.name);
+        m_stack->addLayer(at + k, copy);
+        inserted << at + k;
+    }
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive,
+                                         tr(above ? "Paste layers above"
+                                                  : "Paste layers below")));
+    m_layersPanel->setSelection(inserted);
 }
 
 // ---------------------------------------------------------- status bar -----
@@ -1892,21 +2057,92 @@ void MainWindow::buildLayerActions(
     });
 }
 
-void MainWindow::removeLayer(int index) {
-    if (index < 0 || index >= m_stack->count() || m_stack->count() <= 1)
+void MainWindow::removeLayer(int index) { removeLayers({index}); }
+
+void MainWindow::removeLayers(const QList<int>& selection) {
+    // Every removal is one undo entry, taken from the bottom up so the indices
+    // above the ones already handled stay valid. LayerStack::removeLayer refuses
+    // the last real layer, so the "keep one" rule lives in the model rather than
+    // in every caller that could forget it.
+    if (!m_stack->canRemoveAny(selection))
         return;
-    runLayerCommand(tr("Delete layer"), [this, index] { m_stack->removeLayer(index); });
+    const int doomedCount = m_stack->resolveSelection(selection).size();
+    const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
+    m_canvas->bakeActiveObject();
+    if (!m_stack->removeSpans(selection))
+        return;
+    // Land on something that can still be painted on.
+    const int active = m_stack->drawableIndex();
+    m_stack->setActiveIndex(active >= 0 ? active : 0);
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive,
+                                         tr(doomedCount == 1 ? "Delete layer"
+                                                             : "Delete layers")));
+    m_layersPanel->setSelection({m_stack->activeIndex()});
+}
+
+void MainWindow::renameLayer(int index, const QString& name) {
+    renameLayers(index, name, {});
+}
+
+// Renaming a selection types the name once. The layer the user actually edited
+// keeps it, and the rest get a numbered suffix -- the same name, not a wildcard:
+// three layers called "Paint" are a bug, and "Paint (1)", "Paint (2)" is the
+// cheapest thing that stops it.
+void MainWindow::renameLayers(int index, const QString& name,
+                              const QList<int>& alsoSelected) {
+    const QString base = name.trimmed();
+    if (base.isEmpty() || index < 0 || index >= m_stack->count())
+        return;
+    if (m_stack->layerAt(index).isBackground)
+        return;
+    QList<int> others = alsoSelected;
+    others.removeAll(index);
+    if (others.isEmpty()) {
+        runLayerCommand(tr("Rename layer"),
+                        [this, index, base] { m_stack->renameLayer(index, base); });
+        return;
+    }
+    // Topmost first, so the suffixes count down the rail the way it reads.
+    std::sort(others.begin(), others.end());
+    const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
+    m_canvas->bakeActiveObject();
+    m_stack->renameLayer(index, base);
+    int serial = 1;
+    for (int other : others) {
+        if (other < 0 || other >= m_stack->count() || m_stack->layerAt(other).isBackground)
+            continue;
+        m_stack->renameLayer(other, QStringLiteral("%1 (%2)").arg(base).arg(serial++));
+    }
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Rename layers")));
+}
+
+void MainWindow::groupLayers(const QList<int>& selection) {
+    if (selection.size() < 2)
+        return;
+    // A folder owns a contiguous run, so a selection with a hole in it is
+    // refused rather than quietly widened -- widening would swallow layers the
+    // user did not pick, and losing one to a group is not undoable by renaming.
+    if (m_stack->resolveSelection(selection).size() != 1) {
+        showToast(tr("Only a block of neighbouring layers can be grouped."));
+        return;
+    }
+    const QList<Layer> before = m_stack->layers();
+    const int beforeActive = m_stack->activeIndex();
+    m_canvas->bakeActiveObject();
+    // New groups start folded by default: a group of nine layers arriving as
+    // nine expanded rows has not tidied anything.
+    const int at = m_stack->groupInto(selection, Settings::newFoldersFolded());
+    if (at < 0)
+        return;
+    m_undo->push(Commands::makeLayerList(m_stack, before, beforeActive, tr("Group layers")));
+    m_layersPanel->setSelection({at});
 }
 
 void MainWindow::toggleLayerVisibility(int index, bool visible) {
     runLayerCommand(tr(visible ? "Show layer" : "Hide layer"),
                     [this, index, visible] { m_stack->setLayerVisible(index, visible); });
-}
-
-void MainWindow::renameLayer(int index, const QString& name) {
-    if (index < 0 || index >= m_stack->count())
-        return;
-    runLayerCommand(tr("Rename layer"), [this, index, name] { m_stack->renameLayer(index, name); });
 }
 
 void MainWindow::editBackgroundColor(int index) {

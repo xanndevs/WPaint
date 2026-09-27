@@ -988,6 +988,16 @@ void CanvasView::setShapeStyle(ShapeStyle style) {
 
 void CanvasView::mousePressEvent(QMouseEvent* ev) {
     setFocus();
+    // A folder is a real selection and a perfectly good thing to click, it just
+    // has no pixels. Every drawing gesture arrives through here, so this is the
+    // one place that has to know -- and it refuses before the tool sees the
+    // event, so no tool has to grow a "you cannot draw here" branch.
+    if (m_tool && m_tool->id() != ToolId::Select && m_tool->id() != ToolId::Magnify &&
+        ev->button() != Qt::MiddleButton && m_stack && !m_stack->isDrawable(m_stack->activeIndex())) {
+        emit editableLayerRequired();
+        ev->accept();
+        return;
+    }
     if (m_boundaryResize) finishBoundaryResize();
     if (m_selResizing) finishSelectionResize();
     if (m_objectDragging) finishObjectDrag();

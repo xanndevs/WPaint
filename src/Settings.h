@@ -39,6 +39,9 @@ struct SettingsValues {
     // stops being helpful.
     bool crispPixelsWhenMagnified = false;
     bool showBoundaryHandles = true;
+    // A new group starts collapsed. A group of nine arriving as nine expanded
+    // rows has not tidied anything, and the user can open it with one click.
+    bool newFoldersFolded = true;
 
     // ---- tools ----
     bool smoothShapes = true;
@@ -94,6 +97,7 @@ const SettingsValues& values();
 bool antialiasCanvas();
 bool crispPixelsWhenMagnified();
 bool showBoundaryHandles();
+bool newFoldersFolded();
 bool smoothShapes();
 bool smoothText();
 bool spaceWheelBrushSize();

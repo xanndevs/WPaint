@@ -3,6 +3,8 @@
 #include "Tool.h"
 
 #include <QColor>
+#include "Layer.h"
+
 #include <QHash>
 #include <QImage>
 #include <QMainWindow>
@@ -21,6 +23,7 @@ class QEnterEvent;
 class QContextMenuEvent;
 class QEvent;
 class QLabel;
+class FluentToast;
 class QMenu;
 class QToolButton;
 class QMouseEvent;
@@ -119,6 +122,20 @@ private:
     void buildStatusBar();
     void placeSizePanel();
     bool eventFilter(QObject* watched, QEvent* ev) override;
+
+public slots:
+    // The rail's own verbs. Public because the panel's actions, the rail's
+    // scoped shortcuts and the context menu all three reach them, and because
+    // "copy these layers" is a thing worth being able to ask for from outside
+    // the window rather than by synthesising a click.
+    void copyLayers(const QList<int>& selection, bool cut);
+    void pasteLayers(bool above);
+    void removeLayers(const QList<int>& selection);
+    void groupLayers(const QList<int>& selection);
+    void renameLayers(int index, const QString& name, const QList<int>& alsoSelected);
+    void showToast(const QString& message);
+
+private:
     // `cols` standard buttons per row; a wpBig control always takes a column
     // of its own spanning both rows.
     QWidget* toolCluster(const QString& caption, const QList<QWidget*>& controls,
@@ -163,8 +180,10 @@ private:
     // layers
     void addLayer();
     void removeLayer(int index);
-    void toggleLayerVisibility(int index, bool visible);
     void renameLayer(int index, const QString& name);
+    void showLayerContextMenu(const QList<int>& selection, const QPoint& at);
+    void buildLayerClipboardActions();
+    void toggleLayerVisibility(int index, bool visible);
     void editBackgroundColor(int index);
     void runLayerCommand(const QString& text, std::function<void()> mutate);
 
@@ -182,6 +201,13 @@ private:
     QMenu* m_shapeStyleMenu = nullptr;
     QToolButton* m_layersToggle = nullptr;
     QWidget* m_paletteHost = nullptr;
+    FluentToast* m_toast = nullptr;
+    QAction* m_pasteAboveAction = nullptr;
+    QAction* m_pasteBelowAction = nullptr;
+    // Layers copied or cut in the rail, in rail order. Separate from the image
+    // clipboard on purpose: pasting a picture and pasting five layers are
+    // different acts and must not share a buffer.
+    QList<Layer> m_layerClipboard;
     SizeSliderPanel* m_sizePanel;
     LayersPanel* m_layersPanel;
     CopilotPanel* m_copilotPanel;
