@@ -23,9 +23,12 @@ struct Entry {
 using ColorList = QVector<QColor>;
 using ShortcutMap = QMap<QString, QString>;
 
-#define WP_SETTING(field, type)                                            \
+// The key is spelled out rather than derived from the field name: the flat name
+// would put twenty-one settings in one namespace at the top level of the config
+// file, and renaming it later would orphan the value anybody had already saved.
+#define WP_SETTING(key, field, type)                                       \
     {                                                                       \
-#field,                                                                   \
+        key,                                                                \
         [](const SettingsValues& v) { return QVariant::fromValue(v.field); }, \
             [](SettingsValues& v, const QVariant& q) { v.field = q.value<type>(); } \
     }
@@ -35,27 +38,27 @@ using ShortcutMap = QMap<QString, QString>;
 // stay one row each -- the shortcut map and the custom palette are a QMap and a
 // QVector inside one field, not one field per binding or per swatch.
 constexpr Entry kEntries[] = {
-    WP_SETTING(antialiasCanvas, bool),
-    WP_SETTING(crispPixelsWhenMagnified, bool),
-    WP_SETTING(showBoundaryHandles, bool),
-    WP_SETTING(smoothShapes, bool),
-    WP_SETTING(smoothText, bool),
-    WP_SETTING(spaceWheelBrushSize, bool),
-    WP_SETTING(undoLimit, int),
-    WP_SETTING(confirmDiscard, bool),
-    WP_SETTING(thumbnailQuality, int),
-    WP_SETTING(defaultShape, int),
-    WP_SETTING(defaultShapeStyle, int),
-    WP_SETTING(defaultBrushStyle, int),
-    WP_SETTING(defaultBrushSize, int),
-    WP_SETTING(defaultPrimary, QColor),
-    WP_SETTING(defaultSecondary, QColor),
-    WP_SETTING(defaultBackground, QColor),
-    WP_SETTING(defaultCanvasSize, QString),
-    WP_SETTING(palettePreset, int),
-    WP_SETTING(paletteCustom, ColorList),
-    WP_SETTING(shortcuts, ShortcutMap),
-    WP_SETTING(themePreference, int),
+    WP_SETTING("canvas/antialias", antialiasCanvas, bool),
+    WP_SETTING("canvas/crispAbove100", crispPixelsWhenMagnified, bool),
+    WP_SETTING("canvas/showBoundaryHandles", showBoundaryHandles, bool),
+    WP_SETTING("tools/smoothShapes", smoothShapes, bool),
+    WP_SETTING("text/antialias", smoothText, bool),
+    WP_SETTING("tools/spaceWheelBrushSize", spaceWheelBrushSize, bool),
+    WP_SETTING("undo/maxSteps", undoLimit, int),
+    WP_SETTING("files/confirmDiscard", confirmDiscard, bool),
+    WP_SETTING("layers/thumbnailQuality", thumbnailQuality, int),
+    WP_SETTING("defaults/shape", defaultShape, int),
+    WP_SETTING("defaults/shapeStyle", defaultShapeStyle, int),
+    WP_SETTING("defaults/brushStyle", defaultBrushStyle, int),
+    WP_SETTING("defaults/brushSize", defaultBrushSize, int),
+    WP_SETTING("defaults/primaryColor", defaultPrimary, QColor),
+    WP_SETTING("defaults/secondaryColor", defaultSecondary, QColor),
+    WP_SETTING("defaults/backgroundColor", defaultBackground, QColor),
+    WP_SETTING("defaults/canvasSize", defaultCanvasSize, QString),
+    WP_SETTING("colors/palettePreset", palettePreset, int),
+    WP_SETTING("colors/paletteCustom", paletteCustom, ColorList),
+    WP_SETTING("input/shortcuts", shortcuts, ShortcutMap),
+    WP_SETTING("theme/preference", themePreference, int),
 };
 
 #undef WP_SETTING
