@@ -78,9 +78,15 @@ QWidget* makePage(const QString& title, const QString& subtitle, QVBoxLayout** o
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* body = new QWidget;
-    body->setObjectName("SettingsPage");
+    // Not "SettingsPage" either: that name is the page above this, and two
+    // widgets sharing an object name leaves the stylesheet -- and any
+    // findChild by name -- guessing which one it has.
+    body->setObjectName("SettingsPageBody");
     auto* bodyLayout = new QVBoxLayout(body);
-    bodyLayout->setContentsMargins(0, 4, t.pad, t.pad * 2);
+    // The right margin is wider than the left because a row's control sits at
+    // the right-hand end of the body: with only a pad there, a Shortcuts key cap
+    // ends up underneath the scrollbar.
+    bodyLayout->setContentsMargins(0, t.pad, t.pad * 3, t.pad * 2);
     bodyLayout->setSpacing(2);
     scroll->setWidget(body);
     root->addWidget(scroll, 1);
@@ -94,9 +100,15 @@ QWidget* makePage(const QString& title, const QString& subtitle, QVBoxLayout** o
 // display order, not the value.
 const QStringList kCanvasSizes = {"400x400", "800x600", "1280x720", "1920x1080", QString()};
 
+// The space above a group heading comes from here, not from a padding in the
+// stylesheet. A label's height does not always grow to fit a stylesheet padding
+// on a short window, and a heading whose top is sliced off by the scroll viewport
+// reads as a rendering fault rather than as a heading.
 QLabel* sectionHeader(const QString& text, QWidget* parent) {
     auto* label = new QLabel(text, parent);
     label->setObjectName("SettingsSection");
+    if (auto* layout = qobject_cast<QVBoxLayout*>(parent->layout()))
+        layout->addSpacing(Theme::tokens().pad);
     return label;
 }
 
@@ -203,7 +215,10 @@ void SettingsDialog::buildPage(const QList<RowSpec>& specs, const QString& title
     for (const RowSpec& spec : specs) {
         if (QString::fromLatin1(spec.section) != section) {
             section = QString::fromLatin1(spec.section);
-            body->addWidget(sectionHeader(section, page));
+            // sectionHeader() puts its own spacing into the body layout, so the
+            // heading does not need a margin of its own on top of that.
+            auto* heading = sectionHeader(section, page);
+            body->addWidget(heading);
         }
         auto* row = new SettingsRow(tr(spec.title), tr(spec.description), page, spec.desc);
         QWidget* control = spec.make(row);

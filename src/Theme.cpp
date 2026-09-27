@@ -465,13 +465,13 @@ QDialog { background: %4; }
    label the on-accent text -- pairing them is what Fluent does and stops the
    hard black/white on a pale grey that read as a colour bug. Weight, not
    colour, is what distinguishes the label. */
-#LayerRow[wpSelected="true"] { background: %30; }
-#LayerRow[wpSelected="true"]:hover { background: %31; }
+#LayerRow[wpSelected="true"] { background: %29; }
+#LayerRow[wpSelected="true"]:hover { background: %30; }
 /* Where a drag would land. A line for "before this row", a filled row for
    "inside this group" -- the view's own drop indicator can only draw the
    first of those, and a collapsed group has to be droppable into. */
 #LayerRow[wpDropBefore="true"] { border-top: 3px solid %14; }
-#LayerRow[wpDropInto="true"] { background: %30; border: 2px solid %14; }
+#LayerRow[wpDropInto="true"] { background: %29; border: 2px solid %14; }
 #LayerRow[wpActive="true"] { background: %14; }
 #LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
 #LayerRow[wpActive="true"]:hover { background: %15; }
@@ -524,12 +524,20 @@ QDialog { background: %4; }
 #SettingsNav::item { padding: 7px 10px; border-radius: %6; color: %3; }
 #SettingsNav::item:hover { background: %7; }
 #SettingsNav::item:selected { background: %14; color: %18; }
-#SettingsPage { background: transparent; }
+#SettingsPage, #SettingsPageBody { background: transparent; }
 #SettingsScroll { background: transparent; border: none; }
 #SettingsScroll > QWidget > QWidget { background: transparent; }
 #SettingsPageTitle { font-size: %24px; color: %3; }
 #SettingsPageSub { color: %11; font-size: %12px; }
-#SettingsSection { color: %10; font-size: %12px; padding-top: %29px; }
+/* A group heading: "File", "Edit", "Colors". It was the tertiary grey at caption
+   size, where a one-pixel stroke is more antialiasing than ink -- the heading
+   rendered at about half the contrast the token asks for and read as a smear
+   above the first row rather than as a heading. Secondary grey and a little
+   weight, and the space above it comes from the layout rather than from a
+   padding here, so a short window cannot clip the top off a letter. */
+#SettingsSection {
+    color: %11; font-size: %12px; font-weight: 600;
+}
 #SettingsRow { background: transparent; border-radius: %6; padding: 8px 10px; }
 #SettingsRow:hover { background: %7; }
 #SettingsRowTitle { color: %3; }
@@ -578,7 +586,6 @@ QDialog { background: %4; }
         .arg(QString::number(2 * t.toolbarBtn - 6))// big tool button min size
         .arg(QString::number(4))                   // popup menu bottom padding
         .arg(QString::number(t.radiusXl))          // floating panel radius
-        .arg(QString::number(8))                   // preferences section padding
         .arg(c(t.selectionFill))                   // multi-selection row fill
         .arg(c(t.selectionHover))                  // multi-selection row hover
         ;

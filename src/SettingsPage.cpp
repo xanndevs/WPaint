@@ -53,9 +53,15 @@ SettingsPage::SettingsPage(QWidget* parent) : QWidget(parent) {
     scroll->setFrameShape(QFrame::NoFrame);
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_body = new QWidget;
-    m_body->setObjectName("SettingsPage");
+    // Not "SettingsPage": that is the name of this page, and two widgets with one
+    // object name make the stylesheet's idea of the page ambiguous -- as well as
+    // any findChild by name.
+    m_body->setObjectName("SettingsPageBody");
     m_bodyLayout = new QVBoxLayout(m_body);
-    m_bodyLayout->setContentsMargins(0, 4, Theme::tokens().pad, Theme::tokens().pad * 2);
+    // The right margin is wider than the left because the key caps sit at the
+    // right-hand end, and with only a pad there they end up under the scrollbar.
+    m_bodyLayout->setContentsMargins(0, Theme::tokens().pad, Theme::tokens().pad * 3,
+                                     Theme::tokens().pad * 2);
     m_bodyLayout->setSpacing(2);
     scroll->setWidget(m_body);
     root->addWidget(scroll, 1);
@@ -97,6 +103,10 @@ void SettingsPage::rebuild() {
 
         auto* header = new QLabel(Shortcuts::groupName(group), m_body);
         header->setObjectName("SettingsSection");
+        // The space above the heading, from the layout rather than from a
+        // stylesheet padding: a label does not always grow to fit one, and the
+        // first heading on the page is the one that gets sliced by the viewport.
+        m_bodyLayout->addSpacing(Theme::tokens().pad);
         m_bodyLayout->addWidget(header);
 
         for (const Shortcuts::Entry* e : shown)
