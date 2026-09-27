@@ -9,6 +9,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QItemSelectionModel>
 #include <QListWidget>
 #include <QMouseEvent>
 #include <QPainter>
@@ -129,6 +130,34 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
     });
     auto* bgLabel = new QLabel(tr("Background"), m_backgroundBar);
     bgLabel->setObjectName("LayerName");
+    // The background is a layer the user can hide -- a transparent canvas is a
+    // perfectly ordinary thing to want -- so it needs the same eye as the rest.
+    // It was the one row without one, which is the sort of asymmetry that reads
+    // as "this is not really a layer" when it is exactly that.
+    auto* bgEye = new QToolButton(m_backgroundBar);
+    bgEye->setObjectName("LayerEyeBtn");
+    bgEye->setAutoRaise(true);
+    bgEye->setCheckable(true);
+    bgEye->setToolTip(tr("Show or hide the background"));
+    bgEye->setIconSize(QSize(18, 18));
+    const int bgIndex = m_stack->backgroundIndex();
+    if (bgIndex >= 0) {
+        bgEye->setChecked(m_stack->layerAt(bgIndex).visible);
+        bgEye->setIcon(Theme::icon(m_stack->layerAt(bgIndex).visible
+                                       ? QStringLiteral("eye")
+                                       : QStringLiteral("eye-off"),
+                                   18, Theme::tokens().icon));
+    }
+    connect(bgEye, &QToolButton::clicked, this, [this, bgEye](bool on) {
+        const int index = m_stack->backgroundIndex();
+        if (index < 0)
+            return;
+        bgEye->setIcon(Theme::icon(on ? QStringLiteral("eye")
+                                      : QStringLiteral("eye-off"),
+                                  18, Theme::tokens().icon));
+        emit visibilityRequested(index, on);
+    });
+    bgLayout->addWidget(bgEye);
     bgLayout->addWidget(bgSwatch);
     bgLayout->addWidget(bgLabel, 1);
 
@@ -149,6 +178,17 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
     connect(m_list, &QListWidget::itemSelectionChanged, this, [this] {
         const QList<int> sel = selectedIndices();
         m_lastSelected = sel.isEmpty() ? -1 : sel.last();
+        // The active row keeps the accent; every selected row gets the softer
+        // selection fill, so the two never read as the same thing.
+        for (int i = 0; i < m_list->count(); ++i) {
+            QWidget* row = m_list->itemWidget(m_list->item(i));
+            QListWidgetItem* item = m_list->item(i);
+            if (!row || !item) continue;
+            if (row->property("wpSelected").toBool() == item->isSelected()) continue;
+            row->setProperty("wpSelected", item->isSelected());
+            row->style()->unpolish(row);
+            row->style()->polish(row);
+        }
         updateHeaderState();
     });
     connect(m_list, &QListWidget::itemDoubleClicked, this,
@@ -168,6 +208,7 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
                 emit contextRequested(selectedIndices(), mapToGlobal(at));
             });
     m_list->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_list->viewport()->installEventFilter(this);
     connect(m_list->model(), &QAbstractItemModel::rowsMoved, this,
             [this](const QModelIndex& parent, int start, int end,
                    const QModelIndex& dest, int row) {
@@ -207,29 +248,28 @@ QList<int> LayersPanel::selectedIndices() const {
 void LayersPanel::setSelection(const QList<int>& indices) {
     m_list->blockSignals(true);
     m_list->clearSelection();
+    QItemSelection selection;
     for (int row = 0; row < m_list->count(); ++row) {
         QListWidgetItem* item = m_list->item(row);
-        if (!item) continue;
-        if (indices.contains(item->data(Qt::UserRole).toInt()))
-            item->setSelected(true);
+        if (item && indices.contains(item->data(Qt::UserRole).toInt())) {
+            const QModelIndex idx = m_list->model()->index(row, 0);
+            selection.select(idx, idx);
+        }
     }
+    m_list->selectionModel()->select(selection, QItemSelectionModel::ClearAndSelect |
+                                                    QItemSelectionModel::Rows);
     if (indices.isEmpty()) {
         m_list->setCurrentRow(-1);
     } else {
-        // The current row is the topmost of the selection, which is the one a
-        // paste-above and a drag both anchor to.
-        int first = m_list->count();
-        for (int row = 0; row < m_list->count(); ++row) {
-            QListWidgetItem* item = m_list->item(row);
-            if (item && item->isSelected())
-                first = qMin(first, row);
-        }
-        if (first < m_list->count())
-            m_list->setCurrentRow(first);
+        // NoUpdate: the default command is ClearAndSelect, which would throw
+        // away every row but the one being made current -- so a five-row
+        // selection collapsed to one, and it looked like the selection was not
+        // taking at all.
+        m_list->setCurrentRow(m_list->currentRow(), QItemSelectionModel::NoUpdate);
         m_lastSelected = indices.last();
     }
     m_list->blockSignals(false);
-    applyActiveProperty(m_list->currentRow());
+    applyActiveProperty(m_stack->activeIndex());
     updateHeaderState();
 }
 
@@ -252,17 +292,82 @@ void LayersPanel::updateThumbnails() {
 
 void LayersPanel::setActiveLayer(int index) {
     if (m_syncing) return;
-    if (index >= 0 && index < m_list->count() && m_list->currentRow() != index) {
+    // The canvas's active layer and the rail's selection are two different
+    // things, and with more than one row picked they come apart on purpose: the
+    // accent follows the canvas, the highlight follows the user. Moving the
+    // current row here would clear a multi-selection, and it happens *during*
+    // the click that made it -- so a shift-click would extend from the wrong
+    // anchor and quietly skip a row in the middle.
+    if (selectedIndices().size() <= 1 && index >= 0 && index < m_list->count() &&
+        m_list->currentRow() != index) {
         m_list->setCurrentRow(index);
         m_lastSelected = index;
     }
     applyActiveProperty(index);
 }
 
+// Shift-click, done here rather than by the view.
+//
+// QAbstractItemView anchors a shift-click on a private persistent index that it
+// invalidates whenever the model resets -- and rebuilding the rail resets the
+// model, so the anchor was silently gone and shift-click quietly selected one
+// row instead of a range. The panel already knows which row the user last
+// touched, because the context menu needs it for the rename rule, and that is
+// the anchor a user expects: the last row they picked, not whichever row Qt
+// happens to have remembered from before the last structural edit.
+bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
+    if (watched != m_list->viewport() || ev->type() != QEvent::MouseButtonPress)
+        return QWidget::eventFilter(watched, ev);
+    auto* press = static_cast<QMouseEvent*>(ev);
+    if (press->button() != Qt::LeftButton ||
+        !(press->modifiers() & Qt::ShiftModifier))
+        return QWidget::eventFilter(watched, ev);
+
+    const QModelIndex index = m_list->indexAt(press->position().toPoint());
+    if (!index.isValid())
+        return QWidget::eventFilter(watched, ev);
+    const int row = index.row();
+    const int anchor = m_lastSelected >= 0 ? m_lastSelected : m_list->currentRow();
+    if (anchor < 0)
+        return QWidget::eventFilter(watched, ev);
+
+    const int from = qMin(anchor, row);
+    const int to = qMax(anchor, row);
+    m_list->blockSignals(true);
+    m_list->clearSelection();
+    for (int r = from; r <= to; ++r)
+        if (QListWidgetItem* item = m_list->item(r))
+            item->setSelected(true);
+    m_list->setCurrentRow(row);
+    m_list->blockSignals(false);
+    m_lastSelected = row;
+    applyActiveProperty(row);
+    updateHeaderState();
+    press->accept();
+    return true;
+}
+
 void LayersPanel::rebuildList() {
     m_syncing = true;
     commitRename();
+    // A rebuild tears every row down, so whatever the user had selected has to
+    // be put back. It used not to be, which is why ctrl-clicking two layers
+    // appeared to do nothing: the second click changed the current row, the
+    // shell made that layer active, the stack said `changed`, and the rebuild
+    // that followed threw the selection away on the way past.
+    const QList<int> keep = selectedIndices();
+    const int keepCurrent = m_list->currentRow();
     m_list->blockSignals(true);
+    // clear() only *schedules* the row widgets for deletion, so for a moment
+    // they are still children of the viewport, still on top, and still eating
+    // the mouse. A click in that window lands on a row that is about to
+    // disappear -- which is the other half of "ctrl-click does nothing".
+    for (int i = 0; i < m_list->count(); ++i) {
+        if (QWidget* w = m_list->itemWidget(m_list->item(i))) {
+            w->setAttribute(Qt::WA_TransparentForMouseEvents, true);
+            w->hide();
+        }
+    }
     m_list->clear();
 
     // The background is the last entry in the stack and is drawn in its own
@@ -378,14 +483,27 @@ void LayersPanel::rebuildList() {
         if (b >= 0)
             swatch->setIcon(backgroundSwatch(m_stack->layerAt(b).backgroundColor));
     }
+    for (QToolButton* eye : m_backgroundBar->findChildren<QToolButton*>("LayerEyeBtn")) {
+        const int b = m_stack->backgroundIndex();
+        if (b < 0) continue;
+        eye->setChecked(m_stack->layerAt(b).visible);
+        eye->setIcon(Theme::icon(m_stack->layerAt(b).visible ? QStringLiteral("eye")
+                                                              : QStringLiteral("eye-off"),
+                                  18, Theme::tokens().icon));
+    }
 
-    m_list->blockSignals(false);
     const int active = m_stack->activeIndex();
-    if (active >= 0 && active < m_list->count()) {
+    if (!keep.isEmpty()) {
+        setSelection(keep);
+        if (keepCurrent >= 0 && keepCurrent < m_list->count())
+            m_list->setCurrentRow(keepCurrent);
+    } else if (active >= 0 && active < m_list->count()) {
         m_list->setCurrentRow(active);
         m_lastSelected = active;
     }
+    m_list->blockSignals(false);
     m_syncing = false;
+    applyActiveProperty(m_list->currentRow());
     updateHeaderState();
 }
 
@@ -418,8 +536,19 @@ void LayersPanel::applyActiveProperty(int activeRow) {
         if (!rowWidget) continue;
         const bool active = i == activeRow;
         rowWidget->setProperty("wpActive", active);
+        // A selection of three rows has to look like a selection of three rows.
+        // With only the active row marked, ctrl-clicking two more changed
+        // nothing on screen, which is indistinguishable from the clicks not
+        // registering -- which is exactly how the multi-select bug presented.
+        if (QListWidgetItem* item = m_list->item(i))
+            rowWidget->setProperty("wpSelected", item->isSelected());
         rowWidget->style()->unpolish(rowWidget);
         rowWidget->style()->polish(rowWidget);
+        // Re-polishing does not by itself schedule a repaint, and the row is a
+        // widget inside a viewport rather than the item the view paints -- so
+        // without this the new fill only shows up on the next incidental
+        // repaint of the list, which for a programmatic selection may be never.
+        rowWidget->update();
         // The active row is filled with the accent, so its glyphs have to
         // follow to the on-accent colour or they read as dark smudges.
         for (QToolButton* eye : rowWidget->findChildren<QToolButton*>("LayerEyeBtn")) {

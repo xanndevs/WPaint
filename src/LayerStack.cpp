@@ -186,8 +186,12 @@ void LayerStack::renameLayer(int i, const QString& name) {
 void LayerStack::setActiveIndex(int i) {
     if (i < 0 || i >= m_layers.size() || i == m_active) return;
     m_active = i;
+    // activeChanged and not changed: nothing about the layers themselves moved.
+    // Emitting both used to make the rail tear itself down and rebuild on every
+    // click -- and it rebuilds *from inside* the click, so Qt finished its own
+    // selection update afterwards and threw away everything the user had
+    // ctrl-clicked. Selecting a second layer looked like doing nothing at all.
     emit activeChanged(m_active);
-    emit changed();
 }
 
 

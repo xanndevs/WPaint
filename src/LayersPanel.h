@@ -75,6 +75,8 @@ private:
     void updateHeaderState();
     void startRename(int index);
     void commitRename();
+    // Handles shift-click ourselves; see the implementation for why.
+    bool eventFilter(QObject* watched, QEvent* ev) override;
 
     LayerStack* m_stack;
     QListWidget* m_list;
