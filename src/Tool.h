@@ -21,6 +21,7 @@ enum class ToolId {
     Eyedropper,
     Text,
     Crop,
+    Magnify,
     ShapeLine,
     ShapeCurve,
     ShapeRect,

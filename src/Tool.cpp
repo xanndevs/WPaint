@@ -493,6 +493,34 @@ public:
 };
 
 // =====================================================================
+// Magnify tool
+// =====================================================================
+
+// Click to zoom in around the click, right-click to zoom back out. Each click
+// is a discrete step of the same 1.25x the zoom keys and the wheel use, but
+// anchored on the clicked pixel so the point under the cursor stays put.
+class MagnifyTool : public Tool {
+public:
+    ToolId id() const override { return ToolId::Magnify; }
+    QString name() const override { return QObject::tr("Magnify"); }
+    Qt::CursorShape cursor() const override { return Qt::CrossCursor; }
+
+    void mousePress(CanvasView* c, QMouseEvent* ev) override { step(c, ev); }
+
+    // Two fast clicks arrive as press + double-click, so the zoom step has to
+    // live in both or every second click is swallowed.
+    void mouseDoubleClick(CanvasView* c, QMouseEvent* ev) override { step(c, ev); }
+
+private:
+    void step(CanvasView* c, QMouseEvent* ev) {
+        if (ev->button() == Qt::LeftButton)
+            c->zoomAt(ev->position().toPoint(), 1.25);
+        else if (ev->button() == Qt::RightButton)
+            c->zoomAt(ev->position().toPoint(), 1.0 / 1.25);
+    }
+};
+
+// =====================================================================
 // Shape tool
 // =====================================================================
 
@@ -961,6 +989,7 @@ namespace ToolRegistry {
 static const QList<Spec> g_specs = {
     {ToolId::Select, QObject::tr("Select"), "select", false},
     {ToolId::Crop, QObject::tr("Crop"), "crop", false},
+    {ToolId::Magnify, QObject::tr("Magnify"), "magnify", false},
     {ToolId::Pencil, QObject::tr("Pencil"), "pencil", true},
     {ToolId::Fill, QObject::tr("Fill"), "fill", false},
     {ToolId::Eraser, QObject::tr("Eraser"), "eraser", true},
@@ -989,7 +1018,7 @@ const Spec& spec(ToolId id) {
 
 QString clusterName(ToolId id) {
     if (id == ToolId::Select) return QObject::tr("Selection");
-    if (id == ToolId::Crop) return QObject::tr("Image");
+    if (id == ToolId::Crop || id == ToolId::Magnify) return QObject::tr("Image");
     if (id >= ToolId::Pencil && id <= ToolId::Text) return QObject::tr("Tools");
     if (id == ToolId::Brush) return QObject::tr("Brushes");
     if (id >= ToolId::ShapeLine) return QObject::tr("Shapes");
@@ -1016,6 +1045,7 @@ Tool* create(ToolId id) {
     case ToolId::Eyedropper: tool = new EyedropperTool(); break;
     case ToolId::Text: tool = new TextTool(); break;
     case ToolId::Crop: tool = new CropTool(); break;
+    case ToolId::Magnify: tool = new MagnifyTool(); break;
     default: return nullptr;
     }
     cache.insert(id, tool);
