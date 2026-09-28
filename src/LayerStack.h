@@ -154,9 +154,12 @@ public:
     int mergeDown(int i);
     int mergeSelected(const QList<int>& selection);
 
-    // Re-derives every folder's childCount from the entries that follow it.
-    // Public because MainWindow removes runs of layers itself when the
-    // selection spans a group boundary.
+    // Clamps every folder's childCount to the entries that actually follow it --
+    // it does NOT re-derive them. A count is only ever grown where a run is
+    // deliberately put inside that folder, which is why moveSpan() credits the
+    // folder the caller named rather than looking for one: an empty group claims
+    // nothing, so a lookup cannot find it. Public because MainWindow removes runs
+    // of layers itself when the selection spans a group boundary.
     void fixChildCounts();
 
     QString nextName(const QString& base) const;

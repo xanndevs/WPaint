@@ -341,7 +341,20 @@ int LayerStack::moveSpan(int from, int count, int to, bool intoFolder) {
     // A folder above where the run used to be has shifted down by it.
     if (lost >= 0 && at <= lost)
         m_layers[lost + n].childCount = qMax(0, m_layers[lost + n].childCount - n);
-    const int gained = owningFolder(at);
+    // The group the run is joining. When the caller said "into this folder" the
+    // folder is *known*, and going to look for it is how dropping a layer into an
+    // empty group did nothing at all: owningFolder() answers "does this folder
+    // already claim this entry", an empty group claims nothing, so the run landed
+    // in the list with nobody counting it and the layer sat just below the group
+    // looking like nothing had happened.
+    int gained = -1;
+    if (intoFolder) {
+        const int f = at - 1; // the run was put at the top of the folder at `to`
+        if (f >= 0 && m_layers.at(f).isFolder)
+            gained = f;
+    } else {
+        gained = owningFolder(at);
+    }
     if (gained >= 0)
         m_layers[gained].childCount += n;
     // The entry that was active is still active, wherever it ended up.

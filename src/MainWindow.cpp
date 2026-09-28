@@ -530,6 +530,18 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                 }
                 runLayerCommand(intoFolder ? tr("Move into group") : tr("Move layer"),
                                 [this, from, count, to, intoFolder] {
+                                    // A drop into a group that is folded puts the
+                                    // layer somewhere the rail is not showing, and
+                                    // from here that is indistinguishable from a
+                                    // drop that did nothing at all -- the group
+                                    // looks exactly as it did before. Open it, the
+                                    // way a file manager opens a collapsed folder
+                                    // you drop onto, and in the same command so
+                                    // undo puts the rail back as it was.
+                                    if (intoFolder && to >= 0 && to < m_stack->count()
+                                        && m_stack->layerAt(to).isFolder
+                                        && m_stack->layerAt(to).folded)
+                                        m_stack->setFolded(to, false);
                                     m_stack->moveSpan(from, count, to, intoFolder);
                                 });
             });
