@@ -1550,6 +1550,15 @@ void MainWindow::placeImageOnCanvas(const QImage& img, const QPointF& atCanvas,
 void MainWindow::placeImageOnLayer(const QImage& img) {
     if (img.isNull())
         return;
+    // Every layer is the size of the document -- the stack conforms one on the
+    // way in, and conforming crops rather than scales -- so placing an image
+    // larger than the canvas without growing it first quietly throws most of
+    // the image away. The canvas grows the way it always does: towards the
+    // bottom right, by as much as the image needs and not a pixel more.
+    const QSize doc = m_stack->size();
+    const QSize want(qMax(doc.width(), img.width()), qMax(doc.height(), img.height()));
+    if (!want.isEmpty() && want != doc)
+        m_canvas->growCanvasTo(want);
     // Through the same rule as Add layer, so a dropped image lands where a new
     // layer would rather than in a place of its own.
     Layer l;
