@@ -419,6 +419,12 @@ QToolTip {
 QDialog { background: %4; }
 #DialogHeader { font-size: %24px; font-weight: 600; color: %3; }
 #HintLabel { color: %11; }
+/* A button that throws work away. The danger token had no consumer until the
+   drop prompt, which is the one place in the app where a single click can lose a
+   drawing. */
+#DangerButton { color: %32; border-color: %32; background: transparent; }
+#DangerButton:hover { background: %32; color: %18; }
+#DangerButton:default { color: %32; border-color: %32; background: %32; }
 #StatusDim { color: %11; }
 
 /* ---- Panels ---- */
@@ -588,6 +594,7 @@ QDialog { background: %4; }
         .arg(QString::number(t.radiusXl))          // floating panel radius
         .arg(c(t.selectionFill))                   // multi-selection row fill
         .arg(c(t.selectionHover))                  // multi-selection row hover
+        .arg(c(t.danger))                          // the destructive button
         ;
     // A surviving marker means the chain above is out of step with the sheet.
     Q_ASSERT(!qss.contains(QLatin1Char('%')));

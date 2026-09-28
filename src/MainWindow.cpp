@@ -4,6 +4,8 @@
 #include "ColorDialog.h"
 #include "CopilotPanel.h"
 #include "Commands.h"
+#include "DrawingUtils.h"
+#include "FileDropDialog.h"
 #include "FluentSlider.h"
 #include "FluentToast.h"
 #include "Layer.h"
@@ -24,6 +26,9 @@
 #include <QClipboard>
 #include <QCloseEvent>
 #include <QDockWidget>
+#include <QDragEnterEvent>
+#include <QDragMoveEvent>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFrame>
@@ -418,6 +423,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle(tr("WPaint — Untitled"));
     resize(1280, 720);
     setMinimumSize(890, 600);
+    // Explicit rather than inherited: the rail turns this on for its own drag, and
+    // a window that only accepts drops because a dock asked for it is a window
+    // that stops accepting them if the dock is ever rebuilt without it.
+    setAcceptDrops(true);
 
     m_stack = new LayerStack(this);
     m_undo = new QUndoStack(this);
@@ -1342,6 +1351,199 @@ void MainWindow::resizeEvent(QResizeEvent* ev) {
     placeSizePanel();
 }
 
+// ------------------------------------------------------------- drops ------
+
+// What a drop is carrying, if it is something this app can use.
+//
+// A file on disk comes first, over pixels the drag is carrying: a file can be
+// reopened, put in a project, or copied somewhere else, and pixels cannot. The
+// app's own layer drag is the one payload to refuse outright -- it is aimed at
+// the rail, and letting the window answer for it would move layers every time
+// somebody dropped one on empty space.
+static const char kLayerDragFormat[] = "application/x-wpaint-layers";
+
+struct DroppedImage {
+    QImage image;
+    QString path; // empty when the drag carried pixels rather than a file
+};
+
+static bool imageFromDrop(const QMimeData* mime, DroppedImage* out) {
+    if (!mime || mime->hasFormat(QLatin1String(kLayerDragFormat)))
+        return false;
+    if (mime->hasUrls()) {
+        for (const QUrl& url : mime->urls()) {
+            if (!url.isLocalFile())
+                continue;
+            const QString path = url.toLocalFile();
+            if (path.isEmpty())
+                continue;
+            QImageReader reader(path);
+            const QImage img = reader.read();
+            if (img.isNull())
+                continue;
+            out->path = path;
+            out->image = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            return true;
+        }
+    }
+    if (mime->hasImage()) {
+        const QImage img = mime->imageData().value<QImage>();
+        if (!img.isNull()) {
+            out->image = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
+            return true;
+        }
+    }
+    return false;
+}
+
+void MainWindow::dragEnterEvent(QDragEnterEvent* ev) {
+    DroppedImage probe;
+    if (imageFromDrop(ev->mimeData(), &probe))
+        ev->acceptProposedAction();
+    else
+        ev->ignore();
+}
+
+void MainWindow::dragMoveEvent(QDragMoveEvent* ev) {
+    DroppedImage probe;
+    if (imageFromDrop(ev->mimeData(), &probe))
+        ev->acceptProposedAction();
+    else
+        ev->ignore();
+}
+
+void MainWindow::dropEvent(QDropEvent* ev) {
+    if (handleDroppedImage(ev->mimeData(), ev->position()))
+        ev->acceptProposedAction();
+    else
+        ev->ignore();
+}
+
+// Everything a drop of `mime` at `windowPos` (window coordinates) comes to.
+// Public because Qt delivers real drops through the drag manager and will not
+// route a synthetic one to a widget, so the routing -- which is all of the
+// decision-making here -- would otherwise not be reachable by a test at all.
+bool MainWindow::handleDroppedImage(const QMimeData* mime, const QPointF& windowPos) {
+    DroppedImage dropped;
+    if (!imageFromDrop(mime, &dropped))
+        return false;
+
+    // Where the pointer is over the document, in image coordinates. The canvas
+    // widget is larger than the viewport on purpose -- it can be panned
+    // off-centre -- so "over the document" is a question and not an assumption.
+    const QPointF atCanvas = QPointF(m_canvas->mapFrom(this, windowPos.toPoint()));
+    const QSize doc = m_stack->size();
+    const bool inside = !doc.isEmpty() && m_canvas->rect().contains(atCanvas.toPoint()) &&
+                        m_canvas->toImage(atCanvas).x() >= 0 &&
+                        m_canvas->toImage(atCanvas).y() >= 0 &&
+                        m_canvas->toImage(atCanvas).x() < doc.width() &&
+                        m_canvas->toImage(atCanvas).y() < doc.height();
+
+    // A canvas nobody has drawn on needs no question: the preference decides.
+    if (isDocumentPristine()) {
+        if (Settings::fileDropAction() ==
+            static_cast<int>(FileDropAction::OpenAsNew)) {
+            if (dropped.path.isEmpty()) {
+                // Pixels with no file behind them cannot become a document, so
+                // the other answer is the only one there is.
+                placeImageOnCanvas(dropped.image, atCanvas, inside);
+                return true;
+            }
+            return openFile(dropped.path, /*hideBackground=*/true);
+        }
+        placeImageOnCanvas(dropped.image, atCanvas, inside);
+        return true;
+    }
+
+    // Something is on the canvas. Ask, because the three answers are not
+    // variations on one: one of them throws the work away.
+    FileDropDialog dlg(dropped.path.isEmpty() ? tr("The dropped image") : dropped.path, this);
+    dlg.exec();
+    switch (dlg.choice()) {
+    case FileDropDialog::Choice::None:
+        return false; // cancelled: the drop does nothing, and that is an answer
+    case FileDropDialog::Choice::DiscardAndOpen:
+        if (dropped.path.isEmpty()) {
+            // Nothing to open. Placing it is the closest thing to what was
+            // asked for that does not lose the canvas.
+            placeImageOnLayer(dropped.image);
+            return true;
+        }
+        return openFile(dropped.path, /*hideBackground=*/true);
+    case FileDropDialog::Choice::NewWindow:
+        if (dropped.path.isEmpty()) {
+            showToast(tr("An image with no file behind it cannot open in a new window."));
+            return false;
+        }
+        openInNewWindow(dropped.path);
+        return true;
+    case FileDropDialog::Choice::PlaceToLayer:
+        placeImageOnLayer(dropped.image);
+        return true;
+    }
+    return false;
+}
+
+void MainWindow::placeImageOnCanvas(const QImage& img, const QPointF& atCanvas,
+                                    bool inside) {
+    if (img.isNull())
+        return;
+    const QSize doc = m_stack->size();
+    const QPointF atImage = m_canvas->toImage(atCanvas);
+    const Draw::DropPlacement where = Draw::placeDroppedImage(doc, img.size(), atImage, inside);
+    // Whatever was half-drawn belongs to the image underneath, and the canvas has
+    // to be its old size before the placement is measured against it.
+    m_canvas->bakeActiveObject();
+    if (where.canvas != doc)
+        m_canvas->growCanvasTo(where.canvas);
+    m_canvas->pasteFloating(img, where.topLeft, tr("Place image"));
+    // The Select tool is what makes a floating object draggable and scalable, so
+    // a dropped image arrives with it -- selected, and ready to be moved.
+    selectTool(ToolId::Select);
+    updateEditActions();
+}
+
+void MainWindow::placeImageOnLayer(const QImage& img) {
+    if (img.isNull())
+        return;
+    // Through the same rule as Add layer, so a dropped image lands where a new
+    // layer would rather than in a place of its own.
+    Layer l;
+    l.name = m_stack->nextName(tr("Layer"));
+    l.image = img;
+    int at = -1;
+    runLayerCommand(tr("Add image layer"), [this, &l, &at] {
+        at = m_stack->addLayer(m_stack->newEntryIndex(
+                 static_cast<NewLayerPlacement>(Settings::newLayerPlacement()),
+                 m_layersPanel->selectedIndices().isEmpty()
+                     ? m_stack->activeIndex()
+                     : m_layersPanel->selectedIndices().first(),
+                 Settings::newLayersStayInGroup()),
+             l);
+        if (at >= 0)
+            m_stack->setActiveIndex(at);
+    });
+    if (at < 0)
+        return;
+    m_layersPanel->setActiveLayer(at);
+    m_layersPanel->setSelection({at});
+    updateWindowTitle();
+}
+
+void MainWindow::openInNewWindow(const QString& file) {
+    if (file.isEmpty())
+        return;
+    // A second window, not a second process: it has its own layer stack and its
+    // own undo history, which is the whole point of asking.
+    auto* win = new MainWindow;
+    win->setAttribute(Qt::WA_DeleteOnClose);
+    win->resize(size());
+    win->show();
+    // Loaded after it is on screen. openFile() asks about unsaved work first, and
+    // in a window that was created a moment ago there is none to ask about.
+    win->openFile(file);
+}
+
 // -------------------------------------------------------------- docks -----
 
 void MainWindow::buildDocks() {
@@ -1825,14 +2027,30 @@ void MainWindow::newDocument() {
 }
 
 void MainWindow::openDocument() {
-    if (!confirmDiscard())
-        return;
+    // The save question comes after the file is chosen, not before: asking
+    // "save your work?" and then having the Open dialog cancelled leaves the
+    // question hanging over a document nothing happened to.
     const QString file = QFileDialog::getOpenFileName(
         this, tr("Open"), QString(),
         tr("Images (*.png *.jpg *.jpeg *.bmp *.gif);;"
            "WPaint Project (*.wpa);;All files (*)"));
     if (file.isEmpty())
         return;
+    openFile(file);
+}
+
+// Opening is one thing with three callers -- the File menu, a file dropped on the
+// window, and a second window being told what to open -- so it is one function
+// and not three copies of the same twenty lines.
+//
+// Returns false when the file could not be opened, which the drop path needs: a
+// dropped file that turns out not to be an image has to say so rather than
+// silently do nothing.
+bool MainWindow::openFile(const QString& file, bool hideBackground) {
+    if (file.isEmpty())
+        return false;
+    if (!confirmDiscard())
+        return false;
 
     if (file.endsWith(QLatin1String(".wpa"), Qt::CaseInsensitive)) {
         LayerStack loaded;
@@ -1840,10 +2058,10 @@ void MainWindow::openDocument() {
         if (!res.ok) {
             QMessageBox::critical(this, tr("WPaint"),
                                   tr("Could not open project: %1").arg(res.error));
-            return;
+            return false;
         }
         installDocument(loaded, file);
-        return;
+        return true;
     }
 
     QImageReader reader(file);
@@ -1851,7 +2069,7 @@ void MainWindow::openDocument() {
     if (img.isNull()) {
         QMessageBox::critical(this, tr("WPaint"),
                               tr("Could not load image:\n%1").arg(reader.errorString()));
-        return;
+        return false;
     }
     LayerStack loaded;
     Layer l;
@@ -1859,6 +2077,18 @@ void MainWindow::openDocument() {
     l.image = img.convertToFormat(QImage::Format_ARGB32_Premultiplied);
     loaded.addLayer(0, l);
     installDocument(loaded, file);
+    // An image dropped on a blank canvas is the whole document, not a drawing
+    // with a backdrop under it. A flat file has no background of its own, so
+    // installDocument() adds a white one -- and under a PNG with transparency
+    // that turns the transparent parts white, which is the opposite of what the
+    // file says. So the backdrop is hidden and the checkerboard shows through,
+    // which is what the image actually is.
+    if (hideBackground) {
+        const int bg = m_stack->backgroundIndex();
+        if (bg >= 0)
+            m_stack->setLayerVisible(bg, false);
+    }
+    return true;
 }
 
 void MainWindow::installDocument(const LayerStack& loaded, const QString& path) {

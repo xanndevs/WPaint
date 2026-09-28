@@ -131,4 +131,49 @@ QImage flipImage(const QImage& img, Qt::Orientation orientation) {
     return img.flipped(orientation);
 }
 
+DropPlacement placeDroppedImage(const QSize& canvas, const QSize& image, const QPointF& mouse,
+                                bool mouseInside) {
+    DropPlacement out;
+    // The canvas only ever grows, and only towards the bottom right, so the
+    // biggest canvas this can ask for is as big as the image is.
+    const QSize grown(qMax(canvas.width(), image.width()), qMax(canvas.height(), image.height()));
+
+    if (!mouseInside) {
+        // Not over the document: centred, and negative when the image is bigger
+        // than the document, in which case it starts at the top-left corner and
+        // the canvas grows to take it.
+        out.topLeft = image.width() >= canvas.width()
+                          ? QPointF(0, 0)
+                          : QPointF((canvas.width() - image.width()) / 2.0, 0);
+        out.topLeft.setY(image.height() >= canvas.height()
+                             ? 0
+                             : (canvas.height() - image.height()) / 2.0);
+        out.canvas = grown;
+        return out;
+    }
+
+    // "Inside" is meant to mean inside, but the caller is working in floating
+    // point from a pointer position, and an image at a negative offset is a paste
+    // that has gone missing. Clamped rather than trusted, so the rule holds for
+    // any input.
+    const QPointF at(canvas.width() > 0 ? qBound(0.0, mouse.x(), canvas.width() - 1.0) : 0.0,
+                     canvas.height() > 0 ? qBound(0.0, mouse.y(), canvas.height() - 1.0) : 0.0);
+
+    const bool fitsAtMouse =
+        at.x() + image.width() <= canvas.width() && at.y() + image.height() <= canvas.height();
+    if (fitsAtMouse) {
+        out.topLeft = at;
+        out.canvas = canvas; // nothing to grow
+        return out;
+    }
+
+    // No room to the right or below the pointer. The canvas grows that way, so
+    // rather than moving the document to make room for a placement the user did
+    // not ask for, the image goes to the corner -- and grows the canvas only if
+    // the image itself is bigger than the document.
+    out.topLeft = QPointF(0, 0);
+    out.canvas = grown;
+    return out;
+}
+
 } // namespace Draw

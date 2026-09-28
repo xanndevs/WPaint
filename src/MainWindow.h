@@ -1,13 +1,13 @@
 #pragma once
 
+#include "Layer.h"
 #include "Tool.h"
 
 #include <QColor>
-#include "Layer.h"
-
 #include <QHash>
 #include <QImage>
 #include <QMainWindow>
+#include <QMimeData>
 #include <QString>
 
 #include <functional>
@@ -100,6 +100,12 @@ protected:
     // else claimed. The canvas has its own selection menu, so this is only ever
     // noise -- swallow it here.
     void contextMenuEvent(QContextMenuEvent* ev) override;
+    // An image file dragged in from a file manager, or an image dragged straight
+    // out of a browser or an image viewer. CanvasView does not accept drops, so
+    // these are on the window and they see everything.
+    void dragEnterEvent(QDragEnterEvent* ev) override;
+    void dragMoveEvent(QDragMoveEvent* ev) override;
+    void dropEvent(QDropEvent* ev) override;
 
 private:
     // construction
@@ -124,6 +130,12 @@ private:
     bool eventFilter(QObject* watched, QEvent* ev) override;
 
 public slots:
+    // Everything a drop of `mime` at `windowPos` (window coordinates) comes to.
+    // A slot because Qt delivers real drops through the drag manager and will not
+    // route a synthetic one to a widget, so this is the only way the routing --
+    // which is all of the deciding here -- can be reached from outside.
+    bool handleDroppedImage(const QMimeData* mime, const QPointF& windowPos);
+
     // A document that has never been drawn on, resized or otherwise touched, and
     // has never been saved. A file dropped on one of those needs no question
     // asked; on anything else it does. Not the same question as "are there
@@ -170,6 +182,20 @@ private:
     // file ops
     bool confirmDiscard();
     void newDocument();
+
+    // Opening is one thing with several callers -- the File menu, a file dropped
+    // on the window, a second window -- so it is one function. False when the
+    // file could not be opened, or when the user declined to lose what is there.
+    // hideBackground is for a flat image that is being *opened by a drop*: the
+    // image is the document, and a white backdrop under a transparent PNG makes
+    // its transparency look like white.
+    bool openFile(const QString& file, bool hideBackground = false);
+    void openInNewWindow(const QString& file);
+    // The two ways a dropped image can land on the canvas: as a floating object
+    // where the pointer was, growing the canvas if it has to; or on a new layer,
+    // placed by the same rule as Add layer.
+    void placeImageOnCanvas(const QImage& img, const QPointF& atCanvas, bool inside);
+    void placeImageOnLayer(const QImage& img);
     void openDocument();
     // False when the file dialog was cancelled, so a caller that is about to
     // replace the document -- confirmDiscard() -- can decline to.
