@@ -4,6 +4,16 @@
 #include <QImage>
 #include <QString>
 
+// Where a new layer or a new group goes. It lives here rather than in Settings
+// because it is a rule about the shape of the stack, not about a preference: the
+// setting stores the value, and the stack is what has to honour it.
+enum class NewLayerPlacement {
+    AboveAll = 0,      // the top of the document, whatever is selected
+    AboveSelected = 1, // directly above the selected layer
+    BelowSelected = 2, // directly below it
+    BelowAll = 3,      // the bottom of the document, above the background
+};
+
 // One entry in the layer stack.
 //
 // QImage is implicitly shared, so value-copies used by the undo stack are cheap
