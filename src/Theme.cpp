@@ -427,9 +427,9 @@ QDialog { background: %4; }
 /* A button that throws work away. The danger token had no consumer until the
    drop prompt, which is the one place in the app where a single click can lose a
    drawing. */
-#DangerButton { color: %32; border-color: %32; background: transparent; }
-#DangerButton:hover { background: %32; color: %18; }
-#DangerButton:default { color: %32; border-color: %32; background: %32; }
+#DangerButton { color: %31; border-color: %31; background: transparent; }
+#DangerButton:hover { background: %31; color: %18; }
+#DangerButton:default { color: %31; border-color: %31; background: %31; }
 #StatusDim { color: %11; }
 
 /* ---- Panels ---- */
@@ -478,11 +478,20 @@ QDialog { background: %4; }
    colour, is what distinguishes the label. */
 #LayerRow[wpSelected="true"] { background: %29; }
 #LayerRow[wpSelected="true"]:hover { background: %30; }
-/* Where a drag would land. A line for "before this row", a filled row for
-   "inside this group" -- the view's own drop indicator can only draw the
-   first of those, and a collapsed group has to be droppable into. */
+/* Where a drag would land: a line above the row for "before it", a line below
+   it for "after it", a filled row for "inside this group". Which side is which
+   is not a detail -- the view's own drop indicator can only draw a line, and it
+   drew it on the top edge while the drop went underneath the row, so the rail
+   said "here" and did the opposite. A collapsed group also has to be droppable
+   into, which no line can express. */
 #LayerRow[wpDropBefore="true"] { border-top: 3px solid %14; }
-#LayerRow[wpDropInto="true"] { background: %29; border: 2px solid %14; }
+#LayerRow[wpDropAfter="true"] { border-bottom: 3px solid %14; }
+/* "Into this group" fills the row like the active one and rings it in the
+   on-accent colour: the row a drop lands in is often the *active* row, and a
+   ring in the accent, on a row already filled with the accent, is a ring you
+   cannot see. The name follows the fill, or it is dark on blue. */
+#LayerRow[wpDropInto="true"] { background: %14; border: 2px solid %18; }
+#LayerRow[wpDropInto="true"] #LayerName { color: %18; font-weight: 600; }
 #LayerRow[wpActive="true"] { background: %14; }
 #LayerRow[wpActive="true"] #LayerName { color: %18; font-weight: 600; }
 #LayerRow[wpActive="true"]:hover { background: %15; }
