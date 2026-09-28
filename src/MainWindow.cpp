@@ -584,6 +584,15 @@ void MainWindow::buildActions() {
         if (const Shortcuts::Entry* e = Shortcuts::find(id)) {
             overrideShortcut(a, Shortcuts::effective(*e));
             m_shortcutActions->insert(id, a);
+            // A shortcut only exists while its action belongs to a widget. An
+            // action that was handed to a menu gets that for free -- QMenu adds
+            // every one of its actions to itself, and a menu belongs to the
+            // window -- but the key-only actions are in no menu at all: the
+            // tools, the crop and magnify, the flips and rotates, the brush and
+            // shape galleries, the fill-mode and brush-size cycles. They had a
+            // shortcut set on them and nothing ever ran it, which is why Space
+            // + wheel (an event, not an action) worked and E did not.
+            addAction(a);
         }
         return a;
     };
