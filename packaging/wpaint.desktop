@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=WPaint
+GenericName=Image Editor
+Comment=Paint, edit and annotate images
+# %F rather than %f: a file manager handing over five images gets five windows,
+# which is the one thing the app can now do that it could not when the entry was
+# written with a single file in mind.
+Exec=wpaint %F
+TryExec=wpaint
+Icon=wpaint
+Terminal=false
+StartupNotify=true
+Categories=Graphics;2DGraphics;RasterGraphics;
+# What "Open with WPaint" is offered for. Every one of these is a format
+# QImageReader can decode, which is what openFile() hands the file to; a
+# desktop entry that advertises a format the app cannot read is worse than one
+# that advertises too few.
+MimeType=image/png;image/jpeg;image/gif;image/bmp;image/tiff;image/webp;image/x-bmp;image/x-portable-bitmap;image/x-portable-graymap;image/x-portable-pixmap;image/vnd.microsoft.icon;image/svg+xml;image/x-xpixmap;image/x-tga;image/x-canon-cr2;image/x-adobe-dng;image/x-sony-arw;image/x-nikon-nef;image/x-canon-cr3;image/x-fuji-raf;image/x-olympus-orf;image/x-panasonic-rw2;

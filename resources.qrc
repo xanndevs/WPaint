@@ -64,5 +64,8 @@
     <file>assets/icons/canvas-handles.svg</file>
     <file>assets/icons/theme.svg</file>
     <file>assets/icons/settings.svg</file>
+    <!-- The application icon, not a themed glyph: it is full colour, it is
+         never tinted, and it is the same file the desktop entry points at. -->
+    <file>assets/wpaint.svg</file>
 </qresource>
 </RCC>

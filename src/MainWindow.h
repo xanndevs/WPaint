@@ -143,12 +143,29 @@ public slots:
     // app for as long as an image was anywhere near the window. All that is
     // needed to know whether a file is an image is its first few bytes.
     static bool canAcceptDrop(const QMimeData* mime);
+    // "Place to a new layer" from the drop prompt, which is the one placement
+    // the dialog offers and the one nothing else reaches.
+    void placeImageOnLayerForTest(const QImage& img) { placeImageOnLayer(img); }
     // A second window with its own layers and its own history. A slot because
     // the drop prompt asks for it and because "open this in its own window" is a
     // thing worth being able to ask for directly.
     void openBlankWindow();
-    // The same, for a file: a second window with the file already in it.
+    // The same, for a file: a second window with the file already in it. Also
+    // how the command line opens a second and third file, which is what makes
+    // "Open with WPaint" work when a file manager hands over more than one.
     void openInNewWindow(const QString& file);
+    // Opening is one thing with several callers -- the File menu, a file dropped
+    // on the window, a second window, the command line -- so it is one function.
+    // False when the file could not be opened, or when the user declined to lose
+    // what is there. hideBackground is for a flat image that is being *opened by
+    // a drop*: the image is the document, and a white backdrop under a
+    // transparent PNG makes its transparency look like white.
+    //
+    // Public because the command line opens the file the desktop entry was
+    // invoked with: without an entry point here, "Open with WPaint" starts the
+    // app on a blank canvas and ignores the file it was handed, which is exactly
+    // the bug the desktop entry is supposed to be the fix for.
+    bool openFile(const QString& file, bool hideBackground = false);
 
     // A document that has never been drawn on, resized or otherwise touched, and
     // has never been saved. A file dropped on one of those needs no question
@@ -197,13 +214,6 @@ private:
     bool confirmDiscard();
     void newDocument();
 
-    // Opening is one thing with several callers -- the File menu, a file dropped
-    // on the window, a second window -- so it is one function. False when the
-    // file could not be opened, or when the user declined to lose what is there.
-    // hideBackground is for a flat image that is being *opened by a drop*: the
-    // image is the document, and a white backdrop under a transparent PNG makes
-    // its transparency look like white.
-    bool openFile(const QString& file, bool hideBackground = false);
     // The two ways a dropped image can land on the canvas: as a floating object
     // where the pointer was, growing the canvas if it has to; or on a new layer,
     // placed by the same rule as Add layer.
