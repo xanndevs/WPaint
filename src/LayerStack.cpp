@@ -266,12 +266,18 @@ void LayerStack::moveLayer(int from, int to) {
 // speaks. intoFolder means the top of the folder at `to` instead: its first
 // child slot, which for a folded group is the only place a drop can mean
 // anything, since none of its children are on screen to aim at.
-int LayerStack::spanDestination(int from, int to, bool intoFolder) const {
+int LayerStack::spanDestination(int from, int count, int to, bool intoFolder) const {
     if (from < 0 || from >= m_layers.size())
         return -1;
     if (m_layers.at(from).isBackground)
         return -1; // the background holds the canvas and stays at the bottom
-    const int n = isFolder(from) ? childCountOf(from) + 1 : 1;
+    if (count < 1)
+        return -1;
+    const int n = qMin(count, m_layers.size() - from);
+    // A run that reaches into the background is not a run of layers.
+    for (int i = from; i < from + n; ++i)
+        if (m_layers.at(i).isBackground)
+            return -1;
     if (from + n > m_layers.size())
         return -1;
 
@@ -282,9 +288,13 @@ int LayerStack::spanDestination(int from, int to, bool intoFolder) const {
         // A group cannot go inside itself, nor inside anything it already holds.
         if (to == from || (to > from && to < from + n))
             return -1;
-        // The entry below the header is its first child; after lifting the run it
-        // sits one further down when the run came from above the header.
-        after = to + 1 + (to > from ? n : 0);
+        // The entry below the header is its first child. Lifting a run that came
+        // from *above* the header shifts the header up by n in the list that
+        // remains, so the child's slot moves *down* by n -- subtracting is the
+        // whole of it, and adding put the run past the group's children instead
+        // of at the top of them, which for a collapsed group looked like the
+        // layer had vanished.
+        after = to + 1 - (to > from ? n : 0);
     } else {
         // Landing inside the run being moved is not a move at all.
         if (to < 0 || to >= m_layers.size() + 1)
@@ -306,15 +316,15 @@ int LayerStack::spanDestination(int from, int to, bool intoFolder) const {
     return after;
 }
 
-bool LayerStack::canMoveSpan(int from, int to, bool intoFolder) const {
-    return spanDestination(from, to, intoFolder) >= 0;
+bool LayerStack::canMoveSpan(int from, int count, int to, bool intoFolder) const {
+    return spanDestination(from, count, to, intoFolder) >= 0;
 }
 
-int LayerStack::moveSpan(int from, int to, bool intoFolder) {
-    const int at = spanDestination(from, to, intoFolder);
+int LayerStack::moveSpan(int from, int count, int to, bool intoFolder) {
+    const int at = spanDestination(from, count, to, intoFolder);
     if (at < 0)
         return -1;
-    const int n = isFolder(from) ? childCountOf(from) + 1 : 1;
+    const int n = qMin(count, m_layers.size() - from);
     // The group the run is leaving, and the one it is joining, have to be told:
     // nothing else in a flat list knows that a run landing below a folder header
     // is now that folder's business. Left alone, the group keeps claiming its

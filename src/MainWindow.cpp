@@ -523,14 +523,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(m_layersPanel, &LayersPanel::visibilityRequested, this,
             &MainWindow::toggleLayerVisibility);
     connect(m_layersPanel, &LayersPanel::moveRequested, this,
-            [this](int from, int to, bool intoFolder) {
-                if (!m_stack->canMoveSpan(from, to, intoFolder)) {
+            [this](int from, int count, int to, bool intoFolder) {
+                if (!m_stack->canMoveSpan(from, count, to, intoFolder)) {
                     showToast(tr("A layer cannot be moved there."));
                     return;
                 }
                 runLayerCommand(intoFolder ? tr("Move into group") : tr("Move layer"),
-                                [this, from, to, intoFolder] {
-                                    m_stack->moveSpan(from, to, intoFolder);
+                                [this, from, count, to, intoFolder] {
+                                    m_stack->moveSpan(from, count, to, intoFolder);
                                 });
             });
     connect(m_layersPanel, &LayersPanel::moveRefused, this,

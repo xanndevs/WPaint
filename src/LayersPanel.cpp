@@ -105,25 +105,61 @@ public:
     using DropFn = std::function<void(int, bool)>;
     void setDropHandler(DropFn fn) { m_onDrop = std::move(fn); }
 
+    // Where a drop at this point would put the run. `row` is the row it goes
+    // *above*, or the group it goes *inside*; `row == count()` is the bottom of
+    // the stack. `valid` is false for a point that is not in the rail at all.
+    struct DropSpot {
+        int row = -1;
+        bool intoFolder = false;
+        bool valid = false;
+    };
+
     // The two questions a drag over the rail asks, asked of the rail rather than
     // of one widget. Both are answered here and from the panel, because which
-    // widget Qt hands a drag to is not ours to choose -- see dragMoveFilter.
-    bool acceptsDropAt(const QPoint& at) const {
-        if (rowAt(at) >= 0)
-            return true;
-        // The empty space below the last row is the *bottom of the stack*, not a
-        // refusal: the background is the only thing down there and it cannot be a
-        // target, but the rail is mostly empty and that space has to mean
-        // "put it at the end". Compared against the viewport's own height -- the
-        // test used the view's, which is taller by the frame, so a drop in the
-        // last few pixels of the rail was refused for being 4px too high.
-        return at.y() >= 0 && at.y() <= viewport()->height();
-    }
-    void setDropHintAt(const QPoint& at) {
+    // widget Qt hands a drag to is not ours to choose -- see dropFilter.
+    DropSpot dropSpotAt(const QPoint& at) const {
+        DropSpot spot;
+        auto* self = const_cast<LayerList*>(this);
         const int row = rowAt(at);
-        highlight(row, row >= 0 && isFolderRow(row));
+        if (row < 0) {
+            // The empty space below the last row is the *bottom of the stack*,
+            // not a refusal: the background is the only thing down there and it
+            // cannot be a target, but the rail is mostly empty and that space
+            // has to mean "put it at the end". Compared against the viewport's
+            // own height -- the test used the view's, which is taller by the
+            // frame, so a drop in the last few pixels of the rail was refused
+            // for being 4px too high.
+            if (count() == 0 || at.y() < 0 || at.y() > viewport()->height())
+                return spot;
+            spot.row = count();
+            spot.valid = true;
+            return spot;
+        }
+        if (isFolderRow(row)) {
+            // A group row is a door rather than a boundary, and the whole row is
+            // that door. Splitting it in half would leave the only way into a
+            // group as the sliver below its middle, and "put this inside that
+            // group" is the one thing a rail can do that nothing else can.
+            spot.row = row;
+            spot.intoFolder = true;
+            spot.valid = true;
+            return spot;
+        }
+        // Which half of the row the pointer is in decides which side of it the
+        // run lands on. Without this, hovering anywhere over a row put the run
+        // *below* it -- so the only way to get a layer above the topmost one was
+        // to aim at the empty space above the first row, and the indicator drew
+        // its line on the top edge while the drop went underneath the row.
+        const QRect r = self->visualItemRect(self->item(row));
+        spot.row = at.y() < r.center().y() ? row : row + 1;
+        spot.valid = true;
+        return spot;
     }
-    void clearDropHint() { highlight(-1, false); }
+
+    bool acceptsDropAt(const QPoint& at) const { return dropSpotAt(at).valid; }
+
+    void setDropHintAt(const QPoint& at) { highlight(dropSpotAt(at)); }
+    void clearDropHint() { highlight(DropSpot{}); }
 
 protected:
     // Still here for the case where the drag manager hands the drag to the view
@@ -141,7 +177,7 @@ protected:
     }
 
     void dragLeaveEvent(QDragLeaveEvent* ev) override {
-        highlight(-1, false);
+        clearDropHint();
         QListWidget::dragLeaveEvent(ev);
     }
 
@@ -158,20 +194,11 @@ public:
     // the rule can be exercised without a live drag: Qt delivers real drops
     // through the drag manager, which will not route a synthetic one.
     bool dropAt(const QPoint& at) {
-        const int row = rowAt(at);
-        // Below the last row is the bottom of the stack, not a refusal: the
-        // background is the only thing down there and it cannot be a target, but
-        // the space above it is simply the end of the rail.
-        const bool past = row < 0 && at.y() >= 0 && at.y() <= viewport()->height();
-        if (row < 0 && !past) {
-            highlight(-1, false);
+        const DropSpot spot = dropSpotAt(at);
+        highlight(DropSpot{});
+        if (!spot.valid || !m_onDrop)
             return false;
-        }
-        const bool onto = row >= 0 && isFolderRow(row);
-        highlight(-1, false);
-        if (!m_onDrop)
-            return false;
-        m_onDrop(row >= 0 ? row : count() - 1, onto);
+        m_onDrop(spot.row, spot.intoFolder);
         return true;
     }
 
@@ -188,19 +215,33 @@ public:
 private:
 
     // The drop is shown on the row widget rather than by the view's own
-    // indicator, which draws a line between rows and so cannot say "into this".
-    void highlight(int row, bool onto) {
-        if (row == m_markRow && onto == m_markInto)
+    // indicator, which draws one line between rows and so cannot say which side
+    // of a row it is on, nor "into this".
+    void highlight(const DropSpot& spot) {
+        if (spot.row == m_markRow && spot.intoFolder == m_markInto)
             return;
-        m_markRow = row;
-        m_markInto = onto;
+        m_markRow = spot.row;
+        m_markInto = spot.intoFolder;
+        // "After the last row" has no row of its own, so it is drawn on the
+        // bottom edge of the last one -- which is the bottom of the stack.
+        int marked = -1;
+        bool after = false;
+        if (spot.valid) {
+            if (spot.intoFolder) {
+                marked = spot.row; // the group itself, filled and ringed
+            } else {
+                marked = spot.row < count() ? spot.row : count() - 1;
+                after = spot.row >= count();
+            }
+        }
         for (int r = 0; r < count(); ++r) {
             QWidget* w = itemWidget(item(r));
             if (!w)
                 continue;
-            const bool mark = r == row;
-            w->setProperty("wpDropInto", mark && onto);
-            w->setProperty("wpDropBefore", mark && !onto);
+            const bool mark = r == marked;
+            w->setProperty("wpDropInto", mark && spot.intoFolder);
+            w->setProperty("wpDropBefore", mark && !after && !spot.intoFolder);
+            w->setProperty("wpDropAfter", mark && after);
             w->style()->unpolish(w);
             w->style()->polish(w);
             w->update();
@@ -423,23 +464,34 @@ bool LayersPanel::handleDrop(int row, bool ontoFolder) {
         emit moveRefused();
         return false;
     }
-    // A drop on a group row means inside it; a drop on any other row means "take
-    // its place", so the target is the row below it. The last row has no row
-    // below it, and the bottom of the stack is the layer above the background.
+    // `row` is the row the run goes *above*, or the group it goes inside, and
+    // one past the last row is the bottom of the stack -- the same numbers the
+    // drop indicator is drawn from, so what the rail says and what the drop
+    // does cannot come apart.
     int to = -1;
     if (ontoFolder) {
         to = indexOfRow(row);
+    } else if (row < m_list->count()) {
+        to = indexOfRow(row);
     } else {
-        to = indexOfRow(row + 1);
-        if (to < 0)
-            to = m_stack->backgroundIndex() >= 0 ? m_stack->backgroundIndex()
-                                                 : m_stack->count();
+        // The bottom of the stack, which is the layer above the background: the
+        // background is the last entry and is never a target.
+        to = m_stack->backgroundIndex() >= 0 ? m_stack->backgroundIndex()
+                                             : m_stack->count();
     }
     if (to < 0) {
         emit moveRefused();
         return false;
     }
-    emit moveRequested(runs.first().first(), to, ontoFolder);
+    // How many entries the run is: the selected ones, and whatever the last of
+    // them holds, because a folder dragged on its own takes its children. A run
+    // of a layer and the group under it is two rows and four entries, and a
+    // model told only where it started would move the layer and leave the group.
+    const QList<int> run = runs.first();
+    int count = run.last() - run.first() + 1;
+    if (m_stack->isFolder(run.last()))
+        count += m_stack->childCountOf(run.last());
+    emit moveRequested(run.first(), count, to, ontoFolder);
     return true;
 }
 
@@ -659,6 +711,15 @@ bool LayersPanel::dropFilter(QDragMoveEvent* ev) {
         list->clearDropHint();
     }
     return true;
+}
+
+void LayersPanel::setDropHintAtForTest(const QPoint& at) {
+    static_cast<LayerList*>(m_list)->setDropHintAt(at);
+    m_list->viewport()->update();
+}
+
+bool LayersPanel::dropLayerDragAt(const QPoint& at) {
+    return static_cast<LayerList*>(m_list)->dropAt(at);
 }
 
 bool LayersPanel::acceptsLayerDropAt(const QPoint& at) const {

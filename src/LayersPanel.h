@@ -74,15 +74,26 @@ public:
     // The rule can still be asked directly, and the drop it guards is tested.
     bool acceptsLayerDropAt(const QPoint& at) const;
     static bool isLayerDrag(const QMimeData* mime);
+    // The whole of a drop of the rail's own drag at a point in the viewport:
+    // where it would land, and the doing of it. Public for the same reason --
+    // a live drag cannot be faked here, and this is the rule the indicator is
+    // drawn from, so it is worth asking on its own.
+    bool dropLayerDragAt(const QPoint& at);
+    // Ask the rail to show where a drop at this point would land, so the hint
+    // can be looked at without a drag over it.
+    void setDropHintAtForTest(const QPoint& at);
 
     bool hasFocus() const;
 
 signals:
     void activeRequested(int layerIndex);
     void visibilityRequested(int layerIndex, bool visible);
-    // A dragged run of layers, from its first index to the index it should land
-    // before -- or, with intoFolder, at the top of that folder instead.
-    void moveRequested(int from, int to, bool intoFolder);
+    // A dragged run of layers: its first index, how many entries it is, and the
+    // index it should land before -- or, with intoFolder, at the top of that
+    // folder instead. The count is the run `resolveSelection` returned, which
+    // can be longer than "a layer, or a folder and its contents": a layer and
+    // the group beneath it is two selected rows and four entries.
+    void moveRequested(int from, int count, int to, bool intoFolder);
     // The drop was one the model will not make, e.g. a selection with a hole in
     // it. The shell says so in a toast rather than doing it anyway.
     void moveRefused();

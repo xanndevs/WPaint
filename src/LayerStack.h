@@ -67,13 +67,25 @@ public:
     int addLayer(const NewEntrySpot& spot, const Layer& layer);
     void removeLayer(int index);
     void moveLayer(int from, int to); // reorder around the active index
-    // Moves the run that starts at `from` -- one entry, or a whole folder with
-    // its contents -- so that it lands immediately before whatever entry was at
-    // `to`, which is the index the caller had *before* the move. `intoFolder`
-    // puts it at the top of that folder instead of between rows. Returns where it
-    // landed, or -1 when the move is not one that can be made.
-    int moveSpan(int from, int to, bool intoFolder = false);
-    bool canMoveSpan(int from, int to, bool intoFolder = false) const;
+    // Moves the run of `count` entries that starts at `from`, so that it lands
+    // immediately before whatever entry was at `to` -- the index the caller had
+    // *before* the move. `intoFolder` puts it at the top of that folder instead
+    // of between rows. Returns where it landed, or -1 when the move is not one
+    // that can be made.
+    //
+    // The count is the caller's, not something guessed from `from`, and that is
+    // the whole point of the parameter: a run that starts with a plain layer and
+    // goes on into a folder -- a layer and the group under it, two groups side
+    // by side -- is longer than "a layer, or a folder and its contents", and
+    // guessing moved the first entry and left the rest behind. The rail knows
+    // the run: it is what `resolveSelection` returned.
+    //
+    // The count sits *between* the two indices on purpose. A trailing bool
+    // after two ints is a trap: `moveSpan(4, 1, true)` under the old signature
+    // -- the layer, and the group's index -- keeps compiling and means "move
+    // entry 4 to index 1", a different move entirely. Nothing catches it.
+    int moveSpan(int from, int count, int to, bool intoFolder = false);
+    bool canMoveSpan(int from, int count, int to, bool intoFolder = false) const;
     void setLayerVisible(int i, bool visible);
     void setBackgroundColor(int i, const QColor& color);
     void renameLayer(int i, const QString& name);
@@ -168,7 +180,7 @@ private:
     // Where a dragged run comes to rest, as an index in the list with the run
     // lifted out, or -1 when the move cannot be made. Shared by canMoveSpan()
     // and moveSpan() so the two can never disagree about what is legal.
-    int spanDestination(int from, int to, bool intoFolder) const;
+    int spanDestination(int from, int count, int to, bool intoFolder) const;
     // The insert that fixes up the folder that gained a child, and returns where
     // the entry landed. addLayer() and addFolder() both go through here.
     // `owner` is NewEntrySpot::kFromIndex for a caller that only has an index.
