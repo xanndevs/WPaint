@@ -135,6 +135,12 @@ public slots:
     // route a synthetic one to a widget, so this is the only way the routing --
     // which is all of the deciding here -- can be reached from outside.
     bool handleDroppedImage(const QMimeData* mime, const QPointF& windowPos);
+    // A second window with its own layers and its own history. A slot because
+    // the drop prompt asks for it and because "open this in its own window" is a
+    // thing worth being able to ask for directly.
+    void openBlankWindow();
+    // The same, for a file: a second window with the file already in it.
+    void openInNewWindow(const QString& file);
 
     // A document that has never been drawn on, resized or otherwise touched, and
     // has never been saved. A file dropped on one of those needs no question
@@ -190,7 +196,6 @@ private:
     // image is the document, and a white backdrop under a transparent PNG makes
     // its transparency look like white.
     bool openFile(const QString& file, bool hideBackground = false);
-    void openInNewWindow(const QString& file);
     // The two ways a dropped image can land on the canvas: as a floating object
     // where the pointer was, growing the canvas if it has to; or on a new layer,
     // placed by the same rule as Add layer.

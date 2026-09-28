@@ -594,6 +594,13 @@ void MainWindow::buildActions() {
     Theme::setActionIcon(newAct, "new");
     connect(newAct, &QAction::triggered, this, &MainWindow::newDocument);
 
+    // A second window with its own layers and its own history. It exists because
+    // the drop prompt offers it, and an offer nobody can take up by hand is not
+    // an offer.
+    QAction* newWindowAct = new QAction(tr("New Window"), this);
+    bind(newWindowAct, QStringLiteral("file.newWindow"));
+    connect(newWindowAct, &QAction::triggered, this, &MainWindow::openBlankWindow);
+
     QAction* openAct = new QAction(tr("Open..."), this);
     bind(openAct, QStringLiteral("file.open"));
     Theme::setActionIcon(openAct, "open");
@@ -831,6 +838,7 @@ void MainWindow::buildActions() {
 
     QMenu* fileMenu = menuBar()->addMenu(tr("File"));
     fileMenu->addAction(newAct);
+    fileMenu->addAction(newWindowAct);
     fileMenu->addAction(openAct);
     fileMenu->addSeparator();
     fileMenu->addAction(saveAct);
@@ -1530,11 +1538,19 @@ void MainWindow::placeImageOnLayer(const QImage& img) {
     updateWindowTitle();
 }
 
+void MainWindow::openBlankWindow() {
+    // A second window, not a second process: it has its own layer stack and its
+    // own undo history, which is the whole point of asking.
+    auto* win = new MainWindow;
+    win->setAttribute(Qt::WA_DeleteOnClose);
+    win->resize(size());
+    win->show();
+    return;
+}
+
 void MainWindow::openInNewWindow(const QString& file) {
     if (file.isEmpty())
         return;
-    // A second window, not a second process: it has its own layer stack and its
-    // own undo history, which is the whole point of asking.
     auto* win = new MainWindow;
     win->setAttribute(Qt::WA_DeleteOnClose);
     win->resize(size());

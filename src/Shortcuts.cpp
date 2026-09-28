@@ -12,6 +12,7 @@ using namespace Shortcuts;
 const QList<Entry> kEntries = {
     // ---- File ----
     {"file.new", Group::File, QT_TRANSLATE_NOOP("Shortcuts", "New"), "Ctrl+N", nullptr},
+    {"file.newWindow", Group::File, QT_TRANSLATE_NOOP("Shortcuts", "New Window"), "Ctrl+Shift+N", nullptr},
     {"file.open", Group::File, QT_TRANSLATE_NOOP("Shortcuts", "Open..."), "Ctrl+O", nullptr},
     {"file.save", Group::File, QT_TRANSLATE_NOOP("Shortcuts", "Save"), "Ctrl+S", nullptr},
     {"file.saveAs", Group::File, QT_TRANSLATE_NOOP("Shortcuts", "Save as..."), "Ctrl+Shift+S", nullptr},
