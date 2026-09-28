@@ -6,6 +6,9 @@
 
 class QLabel;
 class QLineEdit;
+class QMouseEvent;
+class QMimeData;
+class QPixmap;
 class QListWidget;
 class QListWidgetItem;
 class QToolButton;
@@ -54,6 +57,14 @@ public:
     // Qt will not route a synthetic drop event, and the rule is worth testing.
     bool handleDrop(int row, bool ontoFolder);
 
+    // What a drag of the current selection would carry, and what it would look
+    // like under the pointer. Public because the panel owns the gesture (see
+    // eventFilter) and "what would this drag carry" is a question worth asking
+    // without a mouse -- a row number is not a layer number, and getting that
+    // wrong moves the wrong layers.
+    QMimeData* dragPayload() const;
+    QPixmap dragPixmap() const;
+
     bool hasFocus() const;
 
 signals:
@@ -95,8 +106,9 @@ private:
     int indexOfRow(int row) const;
     void startRename(int index);
     void commitRename();
-    // Handles shift-click ourselves; see the implementation for why.
+    // Handles shift-click and the drag itself; see the implementation for why.
     bool eventFilter(QObject* watched, QEvent* ev) override;
+    bool dragMoveFilter(QMouseEvent* move);
 
     LayerStack* m_stack;
     QListWidget* m_list;
@@ -111,6 +123,11 @@ private:
     // index, never a row: a folded group makes the two differ, and the callers
     // of this (the rename rule, the shift anchor) are both in stack indices.
     int m_lastSelected = -1;
+    // Where a left press landed in the rail, and whether it is still a press
+    // that could turn into a drag. The drag distance is the same one Qt uses
+    // for its own drags, so a row cannot be dragged by a wobble.
+    QPoint m_dragPressPos;
+    bool m_dragArmed = false;
     // The inline rename editor, when one is open.
     int m_renamingIndex = -1;
     QLineEdit* m_renameEdit = nullptr;

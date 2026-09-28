@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "Theme.h"
 
+#include <QApplication>
 #include <QDrag>
 #include <QDragEnterEvent>
 #include <QDragLeaveEvent>
@@ -98,34 +99,6 @@ public:
     void setDropHandler(DropFn fn) { m_onDrop = std::move(fn); }
 
 protected:
-    void startDrag(Qt::DropActions supportedActions) override {
-        Q_UNUSED(supportedActions);
-        const QList<QListWidgetItem*> items = selectedItems();
-        if (items.isEmpty())
-            return;
-        // The stack indices, not the rows: a row is a position in this widget
-        // and says nothing about which layer it is once a group is folded.
-        QStringList ids;
-        for (QListWidgetItem* item : items)
-            ids << item->data(Qt::UserRole).toString();
-        auto* mime = new QMimeData;
-        mime->setData(QLatin1String(kDragFormat), ids.join(QLatin1Char(',')).toUtf8());
-        auto* drag = new QDrag(this);
-        drag->setMimeData(mime);
-        // A stack of the rows being moved, so the pointer carries something.
-        QPixmap carried;
-        for (QListWidgetItem* item : items) {
-            if (QWidget* row = itemWidget(item))
-                carried = row->grab();
-        }
-        if (!carried.isNull()) {
-            drag->setPixmap(carried.scaledToWidth(
-                qMin(180, carried.width()), Qt::SmoothTransformation));
-            drag->setHotSpot(QPoint(20, carried.height() / 2));
-        }
-        drag->exec(Qt::MoveAction, Qt::MoveAction);
-    }
-
     void dragMoveEvent(QDragMoveEvent* ev) override {
         const int row = rowAt(ev->position().toPoint());
         const bool onto = row >= 0 && row < count() && isFolderRow(row);
@@ -230,11 +203,12 @@ LayersPanel::LayersPanel(LayerStack* stack, QWidget* parent)
     // Extended rather than single: ctrl-click is how you pick several layers to
     // move, copy or group, and every one of those needs more than one.
     m_list->setSelectionMode(QAbstractItemView::ExtendedSelection);
-    // DragDrop, not InternalMove: the view's own move is a row move, and a drag
-    // here has to carry a whole group and be able to land inside a collapsed
-    // one. LayerList does both and hands the panel a row to interpret.
-    m_list->setDragDropMode(QAbstractItemView::DragDrop);
-    m_list->setDragEnabled(true);
+    // Drops only: the panel starts the drag itself (see its eventFilter), so
+    // the view must not start one of its own as well. DragDrop, not
+    // InternalMove -- InternalMove is a row move, and a drag here has to carry
+    // a whole group and be able to land inside a collapsed one.
+    m_list->setDragDropMode(QAbstractItemView::DropOnly);
+    m_list->setDragEnabled(false);
     m_list->setAcceptDrops(true);
     m_list->setDropIndicatorShown(false);
     m_list->viewport()->setAcceptDrops(true);
@@ -534,11 +508,31 @@ void LayersPanel::setActiveLayer(int index) {
 // the anchor a user expects: the last row they picked, not whichever row Qt
 // happens to have remembered from before the last structural edit.
 bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
-    if (watched != m_list->viewport() || ev->type() != QEvent::MouseButtonPress)
+    if (watched != m_list->viewport())
+        return QWidget::eventFilter(watched, ev);
+    if (ev->type() == QEvent::MouseButtonRelease) {
+        m_dragPressPos = QPoint();
+        m_dragArmed = false;
+        return QWidget::eventFilter(watched, ev);
+    }
+    if (ev->type() == QEvent::MouseMove)
+        return dragMoveFilter(static_cast<QMouseEvent*>(ev));
+    if (ev->type() != QEvent::MouseButtonPress)
         return QWidget::eventFilter(watched, ev);
     auto* press = static_cast<QMouseEvent*>(ev);
-    if (press->button() != Qt::LeftButton ||
-        !(press->modifiers() & Qt::ShiftModifier))
+    if (press->button() != Qt::LeftButton)
+        return QWidget::eventFilter(watched, ev);
+
+    // A drag is started here rather than by the view, and the reason is that a
+    // row is a widget. The press lands on a QLabel inside the row, which
+    // ignores it, and it reaches the viewport by propagation -- so the view
+    // never gets a press of its own to open a drag from, and no amount of
+    // setDragEnabled on it changes that. The panel already answers the
+    // viewport's events (shift-click is a few lines below, for the same class
+    // of reason), so the gesture belongs here too.
+    m_dragPressPos = press->position().toPoint();
+    m_dragArmed = true;
+    if (!(press->modifiers() & Qt::ShiftModifier))
         return QWidget::eventFilter(watched, ev);
 
     const QModelIndex index = m_list->indexAt(press->position().toPoint());
@@ -573,6 +567,59 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     updateHeaderState();
     press->accept();
     return true;
+}
+
+bool LayersPanel::dragMoveFilter(QMouseEvent* move) {
+    if (!m_dragArmed)
+        return QWidget::eventFilter(m_list->viewport(), move);
+    if (!(move->buttons() & Qt::LeftButton)) {
+        m_dragArmed = false;
+        return QWidget::eventFilter(m_list->viewport(), move);
+    }
+    if ((move->position().toPoint() - m_dragPressPos).manhattanLength() <=
+        QApplication::startDragDistance())
+        return QWidget::eventFilter(m_list->viewport(), move);
+    m_dragArmed = false;
+    QMimeData* mime = dragPayload();
+    if (!mime)
+        return QWidget::eventFilter(m_list->viewport(), move);
+    auto* drag = new QDrag(m_list);
+    drag->setMimeData(mime);
+    const QPixmap carried = dragPixmap();
+    if (!carried.isNull()) {
+        drag->setPixmap(carried);
+        drag->setHotSpot(QPoint(20, carried.height() / 2));
+    }
+    // The view's drag is switched off (see the constructor), so this is the
+    // only drag in the rail, and it runs a nested loop until the pointer comes
+    // up.
+    drag->exec(Qt::MoveAction, Qt::MoveAction);
+    return true;
+}
+
+QMimeData* LayersPanel::dragPayload() const {
+    const QList<QListWidgetItem*> items = m_list->selectedItems();
+    if (items.isEmpty())
+        return nullptr;
+    // The stack indices, not the rows: a row is a position in this widget and
+    // says nothing about which layer it is once a group is folded.
+    QStringList ids;
+    for (QListWidgetItem* item : items)
+        ids << item->data(Qt::UserRole).toString();
+    auto* mime = new QMimeData;
+    mime->setData(QLatin1String(kDragFormat), ids.join(QLatin1Char(',')).toUtf8());
+    return mime;
+}
+
+QPixmap LayersPanel::dragPixmap() const {
+    // A stack of the rows being moved, so the pointer carries something.
+    QPixmap carried;
+    for (QListWidgetItem* item : m_list->selectedItems())
+        if (QWidget* row = m_list->itemWidget(item))
+            carried = row->grab();
+    if (carried.isNull())
+        return carried;
+    return carried.scaledToWidth(qMin(180, carried.width()), Qt::SmoothTransformation);
 }
 
 void LayersPanel::rebuildList() {
