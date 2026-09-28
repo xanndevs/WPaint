@@ -338,21 +338,34 @@ int LayerStack::moveSpan(int from, int count, int to, bool intoFolder) {
     // keeps the run's own order.
     for (int k = 0; k < n; ++k)
         m_layers.insert(at + k, run.at(k));
-    // A folder above where the run used to be has shifted down by it.
-    if (lost >= 0 && at <= lost)
-        m_layers[lost + n].childCount = qMax(0, m_layers[lost + n].childCount - n);
+    // The group the run is leaving, and whether the run comes to rest inside it
+    // again -- a reorder of its own children, which changes nothing about it.
+    //
+    // Both questions are answered by arithmetic rather than by asking the list,
+    // because at this point the counts are half-updated and `owningFolder` reads
+    // them. Dragging a layer out of a group moved it in the list and left the
+    // count alone, so the group went on claiming a child that had left and
+    // swallowed whatever slid into the gap: that is the whole of "there is no way
+    // to get a layer out of a group" -- it does move, and it is still inside.
+    const int lostLifted = lost > from ? lost - n : lost;
+    const int lostCount = lost >= 0 ? m_layers.at(lostLifted).childCount : 0;
+    const bool staysInside = lost >= 0 && at > lostLifted && at <= lostLifted + lostCount - n;
+    if (lost >= 0 && !staysInside) {
+        const int lostAfter = lostLifted < at ? lostLifted : lostLifted + n;
+        m_layers[lostAfter].childCount = qMax(0, m_layers[lostAfter].childCount - n);
+    }
+
     // The group the run is joining. When the caller said "into this folder" the
     // folder is *known*, and going to look for it is how dropping a layer into an
-    // empty group did nothing at all: owningFolder() answers "does this folder
-    // already claim this entry", an empty group claims nothing, so the run landed
-    // in the list with nobody counting it and the layer sat just below the group
-    // looking like nothing had happened.
+    // empty group did nothing at all: an empty group claims nothing, so a lookup
+    // cannot find it. Either way the counts are consistent now, because the group
+    // the run left has already been settled.
     int gained = -1;
     if (intoFolder) {
         const int f = at - 1; // the run was put at the top of the folder at `to`
         if (f >= 0 && m_layers.at(f).isFolder)
             gained = f;
-    } else {
+    } else if (!staysInside) {
         gained = owningFolder(at);
     }
     if (gained >= 0)
