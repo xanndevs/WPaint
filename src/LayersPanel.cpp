@@ -80,6 +80,13 @@ constexpr int kFolderRowHeight = 20;
 
 const char kDragFormat[] = "application/x-wpaint-layers";
 
+// Is this the rail's own drag, and not something a file manager or another
+// application is offering? The window refuses it too, but it has to be able to
+// tell the difference as well.
+static bool isOurLayerDrag(const QMimeData* mime) {
+    return mime && mime->hasFormat(QLatin1String(kDragFormat));
+}
+
 // The rail's list, with a drag of its own.
 //
 // QListWidget's InternalMove is no use here on three counts: it moves a row,
@@ -98,21 +105,38 @@ public:
     using DropFn = std::function<void(int, bool)>;
     void setDropHandler(DropFn fn) { m_onDrop = std::move(fn); }
 
+    // The two questions a drag over the rail asks, asked of the rail rather than
+    // of one widget. Both are answered here and from the panel, because which
+    // widget Qt hands a drag to is not ours to choose -- see dragMoveFilter.
+    bool acceptsDropAt(const QPoint& at) const {
+        if (rowAt(at) >= 0)
+            return true;
+        // The empty space below the last row is the *bottom of the stack*, not a
+        // refusal: the background is the only thing down there and it cannot be a
+        // target, but the rail is mostly empty and that space has to mean
+        // "put it at the end". Compared against the viewport's own height -- the
+        // test used the view's, which is taller by the frame, so a drop in the
+        // last few pixels of the rail was refused for being 4px too high.
+        return at.y() >= 0 && at.y() <= viewport()->height();
+    }
+    void setDropHintAt(const QPoint& at) {
+        const int row = rowAt(at);
+        highlight(row, row >= 0 && isFolderRow(row));
+    }
+    void clearDropHint() { highlight(-1, false); }
+
 protected:
+    // Still here for the case where the drag manager hands the drag to the view
+    // rather than to the viewport; both ask the same question, so there is one
+    // rule and one answer whichever widget is asked.
     void dragMoveEvent(QDragMoveEvent* ev) override {
-        const int row = rowAt(ev->position().toPoint());
-        const bool onto = row >= 0 && row < count() && isFolderRow(row);
-        // A drop below the last row is a drop at the end of the stack, not a
-        // refusal: the background is the only thing below the last row and it
-        // cannot be a target, but the space above it is the bottom of the rail.
-        const bool usable = row >= 0 || ev->position().toPoint().y() >=
-                                              (row < 0 ? height() : 0);
-        if (usable) {
+        const QPoint at = ev->position().toPoint();
+        if (acceptsDropAt(at)) {
             ev->acceptProposedAction();
-            highlight(row, onto);
+            setDropHintAt(at);
         } else {
             ev->ignore();
-            highlight(-1, false);
+            clearDropHint();
         }
     }
 
@@ -151,8 +175,6 @@ public:
         return true;
     }
 
-private:
-
     int rowAt(const QPoint& at) const {
         const QModelIndex index = indexAt(at);
         return index.isValid() ? index.row() : -1;
@@ -162,6 +184,8 @@ private:
         QListWidgetItem* item = const_cast<LayerList*>(this)->item(row);
         return item && item->data(kFolderRole).toBool();
     }
+
+private:
 
     // The drop is shown on the row widget rather than by the view's own
     // indicator, which draws a line between rows and so cannot say "into this".
@@ -526,6 +550,25 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     }
     if (ev->type() == QEvent::MouseMove)
         return dragMoveFilter(static_cast<QMouseEvent*>(ev));
+    if (ev->type() == QEvent::DragEnter || ev->type() == QEvent::DragMove)
+        return dropFilter(static_cast<QDragMoveEvent*>(ev));
+    if (ev->type() == QEvent::DragLeave) {
+        static_cast<LayerList*>(m_list)->clearDropHint();
+        return QWidget::eventFilter(watched, ev);
+    }
+    if (ev->type() == QEvent::Drop) {
+        auto* drop = static_cast<QDropEvent*>(ev);
+        if (!isLayerDrag(drop->mimeData()))
+            return QWidget::eventFilter(watched, ev);
+        auto* list = static_cast<LayerList*>(m_list);
+        const QPoint at = drop->position().toPoint();
+        list->clearDropHint();
+        if (list->dropAt(at))
+            drop->acceptProposedAction();
+        else
+            drop->ignore();
+        return true;
+    }
     if (ev->type() != QEvent::MouseButtonPress)
         return QWidget::eventFilter(watched, ev);
     auto* press = static_cast<QMouseEvent*>(ev);
@@ -586,6 +629,43 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     press->accept();
     return true;
 }
+
+// The accept decision for a drag over the rail, and where it has to be taken.
+//
+// Qt hands a drag to the first widget under the pointer that says it takes
+// drops, and the rows are widgets: that is the *viewport*, which the list made
+// accept drops so that drops could be routed. Nothing forwards from there to
+// the list -- an event filter on the viewport belongs to the view's frame, not
+// to the view -- so the list's own dragMoveEvent was never called, the viewport
+// accepted the event and did nothing with it, and the drag manager walked on up
+// to the window, which refuses the app's own layer drag on purpose. The result
+// was a drag that started, followed the pointer perfectly, and showed the
+// "no entry" cursor the whole way: the accept and the refusal were both
+// correct, in two widgets, and they cancelled.
+//
+// So the rail answers it here, in the filter that is already the rail's own
+// event routing for shift-click and the drag, and the view's handlers stay for
+// the case where the manager does hand the drag to the view.
+bool LayersPanel::dropFilter(QDragMoveEvent* ev) {
+    if (!isLayerDrag(ev->mimeData()))
+        return QWidget::eventFilter(m_list->viewport(), ev);
+    auto* list = static_cast<LayerList*>(m_list);
+    const QPoint at = ev->position().toPoint();
+    if (acceptsLayerDropAt(at)) {
+        ev->acceptProposedAction();
+        list->setDropHintAt(at);
+    } else {
+        ev->ignore();
+        list->clearDropHint();
+    }
+    return true;
+}
+
+bool LayersPanel::acceptsLayerDropAt(const QPoint& at) const {
+    return static_cast<LayerList*>(m_list)->acceptsDropAt(at);
+}
+
+bool LayersPanel::isLayerDrag(const QMimeData* mime) { return isOurLayerDrag(mime); }
 
 bool LayersPanel::dragMoveFilter(QMouseEvent* move) {
     if (!m_dragArmed)

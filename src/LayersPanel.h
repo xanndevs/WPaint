@@ -6,7 +6,9 @@
 
 class QLabel;
 class QLineEdit;
+class QMimeData;
 class QMouseEvent;
+class QDragMoveEvent;
 class QMimeData;
 class QPixmap;
 class QListWidget;
@@ -64,6 +66,14 @@ public:
     // wrong moves the wrong layers.
     QMimeData* dragPayload() const;
     QPixmap dragPixmap() const;
+    // Whether a drag at this point in the rail is one it will take, and whether
+    // the payload is one of its own. Both are public because they are the whole
+    // of the accept decision and a live drag cannot be exercised here: offscreen
+    // Qt hands a drag to the widget under the cursor, and it cannot find a
+    // widget under a cursor at all, so a drag in a test never reaches anything.
+    // The rule can still be asked directly, and the drop it guards is tested.
+    bool acceptsLayerDropAt(const QPoint& at) const;
+    static bool isLayerDrag(const QMimeData* mime);
 
     bool hasFocus() const;
 
@@ -109,6 +119,7 @@ private:
     // Handles shift-click and the drag itself; see the implementation for why.
     bool eventFilter(QObject* watched, QEvent* ev) override;
     bool dragMoveFilter(QMouseEvent* move);
+    bool dropFilter(QDragMoveEvent* move);
     void releaseDragGrab();
 
     LayerStack* m_stack;
