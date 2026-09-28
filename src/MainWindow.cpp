@@ -528,8 +528,9 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                     showToast(tr("A layer cannot be moved there."));
                     return;
                 }
+                int landed = -1;
                 runLayerCommand(intoFolder ? tr("Move into group") : tr("Move layer"),
-                                [this, from, count, to, intoFolder] {
+                                [this, from, count, to, intoFolder, &landed] {
                                     // A drop into a group that is folded puts the
                                     // layer somewhere the rail is not showing, and
                                     // from here that is indistinguishable from a
@@ -542,8 +543,21 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
                                         && m_stack->layerAt(to).isFolder
                                         && m_stack->layerAt(to).folded)
                                         m_stack->setFolded(to, false);
-                                    m_stack->moveSpan(from, count, to, intoFolder);
+                                    landed = m_stack->moveSpan(from, count, to, intoFolder);
                                 });
+                // The rail rebuilds during the move and puts the selection back
+                // where it was *by index*, which after a move is a different
+                // layer entirely -- so the next drag carried the group, or the
+                // layer that had just slid into the dragged layer's old place,
+                // and dropping that somewhere moved things nobody had picked.
+                // A move re-selects what it moved, where it moved it to, which is
+                // also what makes a second drag of the same thing repeat it.
+                if (landed >= 0) {
+                    QList<int> moved;
+                    for (int i = landed; i < landed + count && i < m_stack->count(); ++i)
+                        moved << i;
+                    m_layersPanel->setSelection(moved);
+                }
             });
     connect(m_layersPanel, &LayersPanel::moveRefused, this,
             [this] { showToast(tr("Only a block of neighbouring layers can be moved.")); });
