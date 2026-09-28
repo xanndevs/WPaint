@@ -109,6 +109,7 @@ private:
     // Handles shift-click and the drag itself; see the implementation for why.
     bool eventFilter(QObject* watched, QEvent* ev) override;
     bool dragMoveFilter(QMouseEvent* move);
+    void releaseDragGrab();
 
     LayerStack* m_stack;
     QListWidget* m_list;
@@ -128,6 +129,8 @@ private:
     // for its own drags, so a row cannot be dragged by a wobble.
     QPoint m_dragPressPos;
     bool m_dragArmed = false;
+    // Whether the viewport is holding a mouse grab for the current gesture.
+    bool m_dragGrabbed = false;
     // The inline rename editor, when one is open.
     int m_renamingIndex = -1;
     QLineEdit* m_renameEdit = nullptr;

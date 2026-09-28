@@ -510,7 +510,16 @@ void LayersPanel::setActiveLayer(int index) {
 bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     if (watched != m_list->viewport())
         return QWidget::eventFilter(watched, ev);
+    if (ev->type() == QEvent::UngrabMouse) {
+        // Another window took the pointer, or the grab was lost. Either way the
+        // gesture is over and no drag is owed.
+        m_dragPressPos = QPoint();
+        m_dragArmed = false;
+        m_dragGrabbed = false;
+        return QWidget::eventFilter(watched, ev);
+    }
     if (ev->type() == QEvent::MouseButtonRelease) {
+        releaseDragGrab();
         m_dragPressPos = QPoint();
         m_dragArmed = false;
         return QWidget::eventFilter(watched, ev);
@@ -530,8 +539,17 @@ bool LayersPanel::eventFilter(QObject* watched, QEvent* ev) {
     // setDragEnabled on it changes that. The panel already answers the
     // viewport's events (shift-click is a few lines below, for the same class
     // of reason), so the gesture belongs here too.
+    //
+    // And it grabs the mouse, because reaching the viewport by propagation is
+    // only true of the press: the moves after it go to whichever row the
+    // pointer is over, and each one has to ignore them for the viewport to see
+    // them. Left to the propagation, a drag that left the pressed row simply
+    // stopped arriving -- which is why the drop side could be perfect and the
+    // drag still not happen.
     m_dragPressPos = press->position().toPoint();
     m_dragArmed = true;
+    m_dragGrabbed = true;
+    m_list->viewport()->grabMouse();
     if (!(press->modifiers() & Qt::ShiftModifier))
         return QWidget::eventFilter(watched, ev);
 
@@ -581,8 +599,13 @@ bool LayersPanel::dragMoveFilter(QMouseEvent* move) {
         return QWidget::eventFilter(m_list->viewport(), move);
     m_dragArmed = false;
     QMimeData* mime = dragPayload();
-    if (!mime)
+    if (!mime) {
+        releaseDragGrab();
         return QWidget::eventFilter(m_list->viewport(), move);
+    }
+    // The drag runs its own nested loop and its own grab from here, so ours has
+    // to be given up rather than held underneath it.
+    releaseDragGrab();
     auto* drag = new QDrag(m_list);
     drag->setMimeData(mime);
     const QPixmap carried = dragPixmap();
@@ -595,6 +618,14 @@ bool LayersPanel::dragMoveFilter(QMouseEvent* move) {
     // up.
     drag->exec(Qt::MoveAction, Qt::MoveAction);
     return true;
+}
+
+void LayersPanel::releaseDragGrab() {
+    if (!m_dragGrabbed)
+        return;
+    m_dragGrabbed = false;
+    if (QWidget* vp = m_list ? m_list->viewport() : nullptr)
+        vp->releaseMouse();
 }
 
 QMimeData* LayersPanel::dragPayload() const {
