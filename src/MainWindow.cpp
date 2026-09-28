@@ -1388,6 +1388,31 @@ struct DroppedImage {
     QString path; // empty when the drag carried pixels rather than a file
 };
 
+// Whether this payload is an image the window could take -- decided without
+// reading a pixel of it.
+bool MainWindow::canAcceptDrop(const QMimeData* mime) {
+    if (!mime || mime->hasFormat(QLatin1String(kLayerDragFormat)))
+        return false;
+    if (mime->hasUrls()) {
+        for (const QUrl& url : mime->urls()) {
+            if (!url.isLocalFile())
+                continue;
+            const QString path = url.toLocalFile();
+            if (path.isEmpty())
+                continue;
+            // A QByteArray format name, empty when nothing recognises the file.
+            // It sniffs the header rather than trusting the extension, so a .png
+            // that is really a jpeg is still offered and a .txt is still refused.
+            if (!QImageReader::imageFormat(path).isEmpty())
+                return true;
+        }
+        return false;
+    }
+    // Pixels rather than a file: they are already in memory, and asking what
+    // they are costs nothing.
+    return mime->hasImage();
+}
+
 static bool imageFromDrop(const QMimeData* mime, DroppedImage* out) {
     if (!mime || mime->hasFormat(QLatin1String(kLayerDragFormat)))
         return false;
@@ -1418,16 +1443,14 @@ static bool imageFromDrop(const QMimeData* mime, DroppedImage* out) {
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* ev) {
-    DroppedImage probe;
-    if (imageFromDrop(ev->mimeData(), &probe))
+    if (canAcceptDrop(ev->mimeData()))
         ev->acceptProposedAction();
     else
         ev->ignore();
 }
 
 void MainWindow::dragMoveEvent(QDragMoveEvent* ev) {
-    DroppedImage probe;
-    if (imageFromDrop(ev->mimeData(), &probe))
+    if (canAcceptDrop(ev->mimeData()))
         ev->acceptProposedAction();
     else
         ev->ignore();

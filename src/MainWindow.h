@@ -135,6 +135,14 @@ public slots:
     // route a synthetic one to a widget, so this is the only way the routing --
     // which is all of the deciding here -- can be reached from outside.
     bool handleDroppedImage(const QMimeData* mime, const QPointF& windowPos);
+    // Whether a payload is an image the window could take, decided without
+    // reading a pixel of it. Public because this is the question the drag
+    // manager asks on every pointer move of a drag -- dozens of times a second
+    // -- and the answer it wants is a yes or a no. Decoding the file to give it
+    // one meant re-reading a full-resolution image each time, which froze the
+    // app for as long as an image was anywhere near the window. All that is
+    // needed to know whether a file is an image is its first few bytes.
+    static bool canAcceptDrop(const QMimeData* mime);
     // A second window with its own layers and its own history. A slot because
     // the drop prompt asks for it and because "open this in its own window" is a
     // thing worth being able to ask for directly.
