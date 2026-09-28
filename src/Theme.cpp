@@ -10,6 +10,7 @@
 #include <QGuiApplication>
 #include <QHash>
 #include <QMap>
+#include <QMenu>
 #include <QPainter>
 #include <QPalette>
 #include <QStyleHints>
@@ -247,9 +248,13 @@ QMenu {
     padding: 4px 4px %27px;
 }
 QMenu::item {
-    padding: 5px 26px 5px 28px; border-radius: %6; margin: 1px 3px;
+    padding: 5px %28px 5px %30px; border-radius: %6; margin: 1px 3px;
     background: transparent;
 }
+/* A menu whose actions are all text has no icon column, so it does not get one:
+   the gutter is there to hold a glyph, and an empty one reads as a missing icon
+   rather than as breathing room. Theme::noteMenuIcons() keeps this honest. */
+QMenu[wpIcons="0"]::item { padding-left: %29px; }
 QMenu::item:selected { background: %7; }
 QMenu::item:disabled { color: %10; }
 QMenu::separator { height: 1px; background: %5; margin: 4px 8px; }
@@ -595,6 +600,9 @@ QDialog { background: %4; }
         .arg(c(t.selectionFill))                   // multi-selection row fill
         .arg(c(t.selectionHover))                  // multi-selection row hover
         .arg(c(t.danger))                          // the destructive button
+        .arg(QString::number(t.menuItemPadX))      // menu row, right
+        .arg(QString::number(t.menuItemPadPlain))  // menu row, left, no icons
+        .arg(QString::number(t.menuItemPadIcon))    // menu row, left, with icons
         ;
     // A surviving marker means the chain above is out of step with the sheet.
     Q_ASSERT(!qss.contains(QLatin1Char('%')));
@@ -707,6 +715,31 @@ void setIcon(QWidget* w, const QString& iconName, int px) {
     w->setProperty("wpIconPx", px);
     if (auto* b = qobject_cast<QAbstractButton*>(w))
         b->setIcon(icon(iconName, px));
+}
+
+void noteMenuIcons(QMenu* menu) {
+    if (!menu)
+        return;
+    // Re-read on every open rather than once at build time: a menu gains and
+    // loses actions at runtime (the context menu enables and disables them, the
+    // theme menu fills itself in), and an answer computed at construction is
+    // only right until the first change.
+    auto mark = [menu] {
+        bool any = false;
+        for (QAction* a : menu->actions()) {
+            if (a->isSeparator())
+                continue;
+            if (!a->icon().isNull()) {
+                any = true;
+                break;
+            }
+        }
+        menu->setProperty("wpIcons", any ? 1 : 0);
+    };
+    mark();
+    // once: the connection belongs to the menu, and the property is what the
+    // stylesheet reads, so a later theme change needs nothing here.
+    QObject::connect(menu, &QMenu::aboutToShow, menu, mark);
 }
 
 } // namespace Theme

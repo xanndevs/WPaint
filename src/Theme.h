@@ -8,6 +8,7 @@
 
 class QWidget;
 class QAction;
+class QMenu;
 class QAbstractButton;
 
 namespace Theme {
@@ -97,6 +98,13 @@ struct Tokens {
     int switchThumb = 14;
     // Preferences shell: the width of the left navigation rail.
     int settingsNavW = 200;
+    // Menu rows. A menu that carries icons needs a gutter wide enough for the
+    // glyph and its breathing room; a menu of plain text needs a normal inset
+    // and nothing else, or every row opens with an empty column where an icon
+    // would have been.
+    int menuItemPadX = 26;
+    int menuItemPadIcon = 28;
+    int menuItemPadPlain = 12;
 
     // Type
     QString fontFamily;
@@ -147,5 +155,9 @@ void setIcon(QWidget* w, const QString& iconName, int px = 20);
 // Same, for a QAction -- menu items are not widgets, so they are tagged and
 // re-tinted separately. A checked action uses the on-accent colour.
 void setActionIcon(QAction* action, const QString& iconName, int px = 18);
+
+// Tell the stylesheet whether this menu has any icon at all, so a menu of plain
+// text does not open with an empty icon column. Safe to call once per menu.
+void noteMenuIcons(QMenu* menu);
 
 } // namespace Theme

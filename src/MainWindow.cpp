@@ -881,6 +881,7 @@ void MainWindow::buildActions() {
 
     QMenu* themeMenu = viewMenu->addMenu(Theme::icon("theme", 18), tr("Theme Preference"));
     Theme::setActionIcon(themeMenu->menuAction(), "theme");
+    Theme::noteMenuIcons(themeMenu);
     QActionGroup* themeGroup = new QActionGroup(this);
     themeGroup->setExclusive(true);
     auto* sysThemeAct = themeMenu->addAction(tr("Use System Theme"));
@@ -1057,6 +1058,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
         connect(m_brushButton, &QToolButton::clicked, this,
                 [this] { selectTool(ToolId::Brush); });
         QMenu* brushMenu = new QMenu(m_brushButton);
+        Theme::noteMenuIcons(brushMenu);
         for (BrushStyle s : kBrushStyles) {
             QAction* a = brushMenu->addAction(brushStyleName(s));
             connect(a, &QAction::triggered, this, [this, s] { applyBrushStyle(s); });
@@ -1085,6 +1087,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
             selectTool(m_canvas->currentShape());
         });
         QMenu* shapeMenu = new QMenu(m_shapeButton);
+        Theme::noteMenuIcons(shapeMenu);
         QActionGroup* grp = new QActionGroup(shapeMenu);
         grp->setExclusive(true);
         for (const auto& s : specs) {
@@ -1125,6 +1128,7 @@ auto* selBtn = toolButtonFor(ToolId::Select);
                        shapeStyleModeIcon(m_canvas->currentShapeStyle()), styleIconPx);
         m_shapeStyleButton->setIconSize(QSize(styleIconPx, styleIconPx));
         QMenu* styleMenu = new QMenu(m_shapeStyleButton);
+        Theme::noteMenuIcons(styleMenu);
         QActionGroup* styleGrp = new QActionGroup(styleMenu);
         styleGrp->setExclusive(true);
         for (ShapeStyle st : kShapeStyles) {
@@ -1641,6 +1645,7 @@ void MainWindow::showLayerContextMenu(const QList<int>& selection, const QPoint&
     const bool canDelete = m_stack->canRemoveAny(selection);
 
     QMenu menu(this);
+    Theme::noteMenuIcons(&menu);
     QAction* copyA = menu.addAction(tr("Copy"));
     copyA->setShortcut(QKeySequence(QKeySequence::Copy));
     QAction* cutA = menu.addAction(tr("Cut"));
