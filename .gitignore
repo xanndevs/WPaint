@@ -1,1 +1,8 @@
 build/
+
+# Local AI working notes -- kept on disk, deliberately not published.
+# Purged from history on 2026-10-01; README.md is the public front page.
+/CLAUDE.md
+/MEMORY.md
+/DESIGN.md
+/docs/ARCHITECTURE.md
