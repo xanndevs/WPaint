@@ -1,3 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-<g fill="none" stroke="#3b3b3b" stroke-width="2.0" stroke-linecap="round" stroke-linejoin="round"><path d="M4.4 16.6 L13.4 7.6 a2 2 0 0 1 2.8 0 l3.2 3.2 a2 2 0 0 1 0 2.8 L14.6 16.4 z" transform="rotate(8 12 12)"/><path d="M3.5 20.4 H20.5"/><path d="M8.6 10.4 L14.6 16.4" transform="rotate(8 12 12)"/></g>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="24"
+   height="24"
+   viewBox="0 0 24 24"
+   version="1.1"
+   id="svg3"
+   sodipodi:docname="eraser.svg"
+   inkscape:version="1.4.4 (dcaf3e7d9e, 2026-05-05)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs3" />
+  <sodipodi:namedview
+     id="namedview3"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0.25"
+     inkscape:showpageshadow="2"
+     inkscape:pageopacity="0.0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:zoom="64"
+     inkscape:cx="7.6328125"
+     inkscape:cy="11.804687"
+     inkscape:window-width="2560"
+     inkscape:window-height="1365"
+     inkscape:window-x="0"
+     inkscape:window-y="0"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="g3" />
+  <g
+     fill="none"
+     stroke="#3b3b3b"
+     stroke-width="2.0"
+     stroke-linecap="round"
+     stroke-linejoin="round"
+     id="g3">
+    <path
+       d="M 4.8314123,15.728955 13.006839,5.5477501 c 0.777687,-0.7622858 2.022313,-0.7622858 2.8,0 l 3.5874,3.1246072 c 0.762286,0.7776871 0.762286,2.0223127 0,2.7999997 l -2.548762,2.776868 -1.99427,2.164733 -7.7020406,1.0796 z"
+       transform="rotate(8,12,12)"
+       id="path1"
+       sodipodi:nodetypes="ccccccccc" />
+    <path
+       d="M3.5 20.4 H20.5"
+       id="path2" />
+    <path
+       d="m 9.3226488,10.161687 5.9355792,4.959974"
+       transform="rotate(8,12,12)"
+       id="path3"
+       sodipodi:nodetypes="cc" />
+  </g>
 </svg>
