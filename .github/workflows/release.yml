@@ -86,11 +86,24 @@ jobs:
                    AppDir/usr/share/icons/hicolor/scalable/apps
           cp install/bin/wpaint AppDir/usr/bin/wpaint
           cp -r install/lib/. AppDir/lib/
+          # The Qt deploy script writes plugins to <prefix>/plugins, which is
+          # NOT inside lib/ -- so without this the AppImage carries no image
+          # format plugins, no icon engine and no platform plugin, and still
+          # starts under the offscreen platform where none of that is needed.
+          cp -r install/plugins AppDir/plugins
           cp packaging/wpaint.desktop AppDir/
           cp packaging/wpaint.desktop AppDir/usr/share/applications/
           cp assets/wpaint.svg AppDir/
           cp assets/wpaint.svg AppDir/usr/share/icons/hicolor/scalable/apps/
           chmod +x AppDir/usr/bin/wpaint
+
+          # The AppImage starts fine without its plugins under the offscreen
+          # platform, so their absence has to be asserted rather than waited
+          # for: a JPEG or a PNG open failing on someone else's machine is
+          # exactly the bug this catches.
+          test -d AppDir/plugins/imageformats \
+            || { echo "no image format plugins in the AppDir"; exit 1; }
+          echo "Plugins bundled: $(find AppDir/plugins -name '*.so' | wc -l)"
 
           # An AppImage without an AppRun is a file that cannot be executed:
           # the format's entry point has to be named exactly this.
@@ -109,8 +122,8 @@ jobs:
           cat > AppDir/qt.conf <<'CONF'
           [Paths]
           Prefix = .
-          Plugins = lib/qt6/plugins
-          QmlImports = lib/qt6/qml
+          Plugins = plugins
+          QmlImports = qml
           CONF
 
       # appimagetool turns the AppDir into an AppImage. linuxdeploy is the
