@@ -64,24 +64,47 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ./install/bin/wpaint --screenshot /tmp/bundled.png
 
-      # Two workarounds for this action, both forced by how it is written:
-      # it passes its inputs into `docker run` unquoted, so any value with a
-      # space in it arrives split into extra arguments (a comment becomes
-      # "Category: Layer-based", and every field after it shifts); and it
-      # resolves the install folder inside the container, where the workspace
-      # is mounted at /workspace, so a relative "./install" becomes "/install"
-      # and is not found. Hence one absolute container-visible path and
-      # single-word values only.
-      - name: Create AppImage
-        uses: Kidev/qt-appimage@v1
-        id: appimage
+      # linuxdeploy + appimagetool rather than a wrapper action. The wrapper
+      # (Kidev/qt-appimage) is three bugs deep: it interpolates inputs into
+      # `docker run` unquoted, so any value with a space arrives split and
+      # every later field shifts; it resolves the install folder inside the
+      # container, where the workspace is /workspace, so "./install" becomes
+      # the nonexistent "/install"; and it writes its output to $GITHUB_OUTPUT,
+      # which is never passed into the container, so the output is empty and
+      # the upload step silently has no file. These two tools are the ones it
+      # wraps, and both are maintained.
+      - name: Create AppDir
+        run: |
+          # Standard AppDir layout: usr/bin is where linuxdeploy is pointed, and
+          # the top-level bin/ + lib/ is what the AppImage runtime resolves
+          # against qt.conf. Desktop entry and icon go to usr/share so the
+          # AppImage registers them with the host.
+          mkdir -p AppDir/usr/bin AppDir/bin AppDir/lib \
+                   AppDir/usr/share/applications \
+                   AppDir/usr/share/icons/hicolor/scalable/apps
+          cp install/bin/wpaint AppDir/usr/bin/wpaint
+          cp -r install/lib/. AppDir/lib/ 2>/dev/null || true
+          cp install/bin/qt.conf AppDir/usr/bin/qt.conf 2>/dev/null || true
+          cp packaging/wpaint.desktop AppDir/usr/share/applications/
+          cp assets/wpaint.svg AppDir/usr/share/icons/hicolor/scalable/apps/
+          chmod +x AppDir/usr/bin/wpaint
+
+      - name: Run linuxdeploy
+        run: |
+          docker run --rm -v "$PWD:/project" \
+            linuxdeploy/linuxdeploy \
+            /project/AppDir/usr/bin/wpaint \
+            --appdir \
+            --plugin qt \
+            --output appimage \
+            --destination /project/out
+
+      - name: Upload AppImage as a workflow artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
         with:
-          install_folder: '/workspace/install'
-          app_name: 'WPaint'
-          comment: 'Paint'
-          category: 'Graphics'
-          icon: '/workspace/assets/wpaint.svg'
-          binary: 'wpaint'
+          name: WPaint-AppImage
+          path: out/*.AppImage
 
       # A manual run has no tag, and publishing against the branch ref would
       # create a release named after a branch. Manual runs stop at the artifact.
@@ -89,13 +112,6 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.appimage.outputs.appimage }}
+          files: out/*.AppImage
           generate_release_notes: true
           fail_on_unmatched_files: true
-
-      - name: Upload AppImage as a workflow artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: WPaint-AppImage
-          path: ${{ steps.appimage.outputs.appimage }}
