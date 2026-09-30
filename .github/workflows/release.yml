@@ -64,15 +64,23 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ./install/bin/wpaint --screenshot /tmp/bundled.png
 
+      # Two workarounds for this action, both forced by how it is written:
+      # it passes its inputs into `docker run` unquoted, so any value with a
+      # space in it arrives split into extra arguments (a comment becomes
+      # "Category: Layer-based", and every field after it shifts); and it
+      # resolves the install folder inside the container, where the workspace
+      # is mounted at /workspace, so a relative "./install" becomes "/install"
+      # and is not found. Hence one absolute container-visible path and
+      # single-word values only.
       - name: Create AppImage
         uses: Kidev/qt-appimage@v1
         id: appimage
         with:
-          install_folder: './install'
+          install_folder: '/workspace/install'
           app_name: 'WPaint'
-          comment: 'Layer-based digital painting application'
+          comment: 'Paint'
           category: 'Graphics'
-          icon: './assets/wpaint.svg'
+          icon: '/workspace/assets/wpaint.svg'
           binary: 'wpaint'
 
       # A manual run has no tag, and publishing against the branch ref would
