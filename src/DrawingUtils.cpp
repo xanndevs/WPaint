@@ -128,9 +128,15 @@ QImage rotateImage(const QImage& img, qreal degrees) {
 
 QImage flipImage(const QImage& img, Qt::Orientation orientation) {
     if (img.isNull()) return img;
-    return orientation == Qt::Horizontal
-    ? img.mirrored(true, false)
-    : img.mirrored(false, true);
+    // Qt 6.9 added the Orientation-based flipped(); the bool-based mirrored() it
+    // replaces is deprecated from 6.9 on, so pick whichever the headers have
+    // and neither build warns. Qt::Horizontal/Vertical are the Orientation
+    // values, which is what the 6.9+ signature wants.
+#if QT_VERSION >= QT_VERSION_CHECK(6, 9, 0)
+    return img.flipped(orientation == Qt::Horizontal ? Qt::Horizontal : Qt::Vertical);
+#else
+    return img.mirrored(orientation == Qt::Horizontal, orientation == Qt::Vertical);
+#endif
 }
 
 DropPlacement placeDroppedImage(const QSize& canvas, const QSize& image, const QPointF& mouse,
