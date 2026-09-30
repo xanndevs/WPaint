@@ -76,19 +76,42 @@ jobs:
       # upload. One maintainer, no issues, last touched in 2025.
       - name: Create AppDir
         run: |
-          # Standard AppDir layout: usr/bin is where linuxdeploy is pointed, and
-          # the top-level bin/ + lib/ is what the AppImage runtime resolves
-          # against qt.conf. Desktop entry and icon go to usr/share so the
-          # AppImage registers them with the host.
-          mkdir -p AppDir/usr/bin AppDir/bin AppDir/lib \
+          # The AppDir layout appimagetool requires, which is stricter than the
+          # install tree: the desktop entry and the icon must sit at the root as
+          # well as under usr/share, because appimagetool looks for them there
+          # and aborts otherwise, and the icon has to be named exactly what the
+          # desktop file's Icon= key says.
+          mkdir -p AppDir/usr/bin AppDir/lib \
                    AppDir/usr/share/applications \
                    AppDir/usr/share/icons/hicolor/scalable/apps
           cp install/bin/wpaint AppDir/usr/bin/wpaint
-          cp -r install/lib/. AppDir/lib/ 2>/dev/null || true
-          cp install/bin/qt.conf AppDir/usr/bin/qt.conf 2>/dev/null || true
+          cp -r install/lib/. AppDir/lib/
+          cp packaging/wpaint.desktop AppDir/
           cp packaging/wpaint.desktop AppDir/usr/share/applications/
+          cp assets/wpaint.svg AppDir/
           cp assets/wpaint.svg AppDir/usr/share/icons/hicolor/scalable/apps/
           chmod +x AppDir/usr/bin/wpaint
+
+          # An AppImage without an AppRun is a file that cannot be executed:
+          # the format's entry point has to be named exactly this.
+          cat > AppDir/AppRun <<'RUNNER'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/wpaint" "$@"
+          RUNNER
+          chmod +x AppDir/AppRun
+
+          # The deploy script writes a qt.conf whose Prefix is relative to the
+          # install layout ("..", i.e. one above bin/). That is wrong inside an
+          # AppDir and makes the binary abort on startup because it looks for
+          # its plugins in a directory that does not exist -- so write one for
+          # the AppDir instead, where the root is the prefix.
+          cat > AppDir/qt.conf <<'CONF'
+          [Paths]
+          Prefix = .
+          Plugins = lib/qt6/plugins
+          QmlImports = lib/qt6/qml
+          CONF
 
       # appimagetool turns the AppDir into an AppImage. linuxdeploy is the
       # usual companion, but its job is finding and bundling an app's
@@ -106,7 +129,24 @@ jobs:
           mkdir -p out
           # CI has no FUSE, so the tool has to fall back to its self-extracting
           # mode; without this the runtime mount fails and the step dies.
-          ./appimagetool.AppImage --appdir AppDir --no-appstream out/WPaint.AppImage
+          # Positional: SOURCE AppDir, then DESTINATION. There is no --appdir
+          # flag; that one belongs to linuxdeploy.
+          ./appimagetool.AppImage AppDir out/WPaint.AppImage --no-appstream
+
+      # An AppImage can be produced and still be unable to run -- a wrong
+      # qt.conf, a missing AppRun, a plugin directory the binary cannot find --
+      # and none of that shows up until something executes it. Unpack it and
+      # run the entry point exactly as the runtime would.
+      - name: Verify the AppImage runs
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          chmod +x out/WPaint.AppImage
+          ./out/WPaint.AppImage --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun || { echo "no executable AppRun"; exit 1; }
+          ( cd squashfs-root && QT_QPA_PLATFORM=offscreen ./AppRun --screenshot /tmp/from-appimage.png )
+          test -s /tmp/from-appimage.png || { echo "AppImage produced no frame"; exit 1; }
+          echo "AppImage runs and renders: $(stat -c%s /tmp/from-appimage.png) bytes"
 
       - name: Upload AppImage as a workflow artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
