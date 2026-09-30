@@ -1,0 +1,46 @@
+name: WPaint CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          target: desktop
+          modules: ''
+
+      - name: Configure CMake
+        run: >
+          cmake -S .
+          -B build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      - name: Smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          ./build/wpaint --screenshot build/smoke-test.png
+
+      - name: Upload smoke test
+        uses: actions/upload-artifact@v4
+        with:
+          name: wpaint-smoke-test
+          path: build/smoke-test.png
