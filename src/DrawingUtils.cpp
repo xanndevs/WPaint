@@ -128,7 +128,9 @@ QImage rotateImage(const QImage& img, qreal degrees) {
 
 QImage flipImage(const QImage& img, Qt::Orientation orientation) {
     if (img.isNull()) return img;
-    return img.flipped(orientation);
+    return orientation == Qt::Horizontal
+    ? img.mirrored(true, false)
+    : img.mirrored(false, true);
 }
 
 DropPlacement placeDroppedImage(const QSize& canvas, const QSize& image, const QPointF& mouse,
