@@ -64,15 +64,16 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ./install/bin/wpaint --screenshot /tmp/bundled.png
 
-      # linuxdeploy + appimagetool rather than a wrapper action. The wrapper
+      # Assemble the AppDir and convert it with appimagetool, the tool the
+      # AppImage project publishes. The wrapper action this replaced
       # (Kidev/qt-appimage) is three bugs deep: it interpolates inputs into
-      # `docker run` unquoted, so any value with a space arrives split and
-      # every later field shifts; it resolves the install folder inside the
-      # container, where the workspace is /workspace, so "./install" becomes
-      # the nonexistent "/install"; and it writes its output to $GITHUB_OUTPUT,
-      # which is never passed into the container, so the output is empty and
-      # the upload step silently has no file. These two tools are the ones it
-      # wraps, and both are maintained.
+      # `docker run` unquoted, so any value containing a space arrives split
+      # and every later field shifts by one; it resolves the install folder
+      # inside its container, where the workspace is mounted at /workspace, so
+      # "./install" becomes the nonexistent "/install"; and it reports its
+      # output through $GITHUB_OUTPUT, which is never passed into the
+      # container, so the output is empty and the upload step has no file to
+      # upload. One maintainer, no issues, last touched in 2025.
       - name: Create AppDir
         run: |
           # Standard AppDir layout: usr/bin is where linuxdeploy is pointed, and
@@ -89,15 +90,23 @@ jobs:
           cp assets/wpaint.svg AppDir/usr/share/icons/hicolor/scalable/apps/
           chmod +x AppDir/usr/bin/wpaint
 
-      - name: Run linuxdeploy
+      # appimagetool turns the AppDir into an AppImage. linuxdeploy is the
+      # usual companion, but its job is finding and bundling an app's
+      # dependencies -- and the deploy script above has already done exactly
+      # that, from a real Qt install rather than by pattern-matching the host.
+      # All that is left is the conversion, which is what this tool does.
+      - name: Fetch appimagetool
         run: |
-          docker run --rm -v "$PWD:/project" \
-            linuxdeploy/linuxdeploy \
-            /project/AppDir/usr/bin/wpaint \
-            --appdir \
-            --plugin qt \
-            --output appimage \
-            --destination /project/out
+          curl -sSL -o appimagetool.AppImage \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool.AppImage
+
+      - name: Build the AppImage
+        run: |
+          mkdir -p out
+          # CI has no FUSE, so the tool has to fall back to its self-extracting
+          # mode; without this the runtime mount fails and the step dies.
+          ./appimagetool.AppImage --appdir AppDir --no-appstream out/WPaint.AppImage
 
       - name: Upload AppImage as a workflow artifact
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
