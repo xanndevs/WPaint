@@ -1,0 +1,93 @@
+name: WPaint Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Lets a dry run be exercised from the Actions tab before the first real tag.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          target: desktop
+          modules: ''
+          cache: true
+
+      - name: Configure CMake
+        run: >
+          cmake -S .
+          -B build
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          -DCMAKE_INSTALL_PREFIX=${{ github.workspace }}/install
+
+      - name: Build
+        run: cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+
+      # The deploy script added to CMakeLists.txt runs here, so this tree has
+      # bin/ plus the Qt libraries and plugins rather than a bare binary.
+      - name: Install
+        run: cmake --install build
+
+      - name: Verify the deploy tree
+        run: |
+          test -x install/bin/wpaint || { echo "no binary in install/bin"; exit 1; }
+          # A bundle with no Qt of its own is the failure mode worth catching
+          # here: it builds fine and then only runs where Qt is installed.
+          if [ -z "$(find install/lib -name 'libQt6Core.so*' 2>/dev/null)" ]; then
+            echo "Qt runtime was NOT bundled into install/lib -- the AppImage"
+            echo "would depend on the host's Qt. Aborting."
+            exit 1
+          fi
+          echo "Bundled Qt libraries:"
+          ls install/lib/libQt6*.so* | head -20
+
+      # Proves the bundle is self-contained before it is published, using the
+      # same offscreen smoke test as CI.
+      - name: Smoke test the bundled binary
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ./install/bin/wpaint --screenshot /tmp/bundled.png
+
+      - name: Create AppImage
+        uses: Kidev/qt-appimage@v1
+        id: appimage
+        with:
+          install_folder: './install'
+          app_name: 'WPaint'
+          comment: 'Layer-based digital painting application'
+          category: 'Graphics'
+          icon: './assets/wpaint.svg'
+          binary: 'wpaint'
+
+      # A manual run has no tag, and publishing against the branch ref would
+      # create a release named after a branch. Manual runs stop at the artifact.
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.appimage.outputs.appimage }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+
+      - name: Upload AppImage as a workflow artifact
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: WPaint-AppImage
+          path: ${{ steps.appimage.outputs.appimage }}

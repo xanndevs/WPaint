@@ -75,3 +75,15 @@ install(FILES packaging/wpaint.desktop
 install(FILES assets/wpaint.svg
         DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps
         RENAME wpaint.svg)
+
+# Bundles the Qt runtime next to the binary, which is what makes a relocatable
+# tarball or AppImage possible. `cmake --install` alone only copies the
+# executable, so without this the app links the system Qt and stops working on
+# any machine that does not have the same one.
+qt_generate_deploy_app_script(
+    TARGET wpaint
+    OUTPUT_SCRIPT deploy_script
+    NO_TRANSLATIONS
+)
+
+install(SCRIPT ${deploy_script})
